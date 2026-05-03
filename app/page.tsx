@@ -171,7 +171,17 @@ function Sidebar({ active, setActive }: { active: View; setActive: (v: View) => 
 
 // ─── Top bar ─────────────────────────────────────────────────────────────────
 
-function TopBar({ onExportAudit }: { onExportAudit: () => void }) {
+type ViewScope = "my" | "team" | "all";
+
+function TopBar({
+  onExportAudit,
+  viewScope,
+  setViewScope,
+}: {
+  onExportAudit: () => void;
+  viewScope: ViewScope;
+  setViewScope: (s: ViewScope) => void;
+}) {
   return (
     <div className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center gap-3 flex-shrink-0">
       {/* Entity */}
@@ -199,6 +209,26 @@ function TopBar({ onExportAudit }: { onExportAudit: () => void }) {
       >
         <FileCheck className="w-3 h-3" /> Export Audit Pack
       </button>
+
+      {/* View scope toggle */}
+      <div className="flex items-center bg-gray-100 rounded-md p-0.5 ml-2">
+        {(["my", "team", "all"] as ViewScope[]).map((s) => {
+          const label = s === "my" ? "My View" : s === "team" ? "Team View" : "All";
+          return (
+            <button
+              key={s}
+              onClick={() => setViewScope(s)}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
+                viewScope === s
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -248,97 +278,148 @@ function KpiCard({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+// Scope-specific KPI datasets. "my" = Maya's personal view, "team" = US compliance team, "all" = full org.
+const SCOPE_METRICS: Record<ViewScope, {
+  mapped: number;
+  applicablePct: number;
+  applicableOf: number;
+  applicableTotal: number;
+  approvedPct: number;
+  approvedCount: number;
+  policyPct: number;
+  policyOf: number;
+  controlPct: number;
+  controlOf: number;
+  openGaps: number;
+  unreviewed: number;
+  decisionCounts: Record<string, number>;
+  gapBreakdown: { label: string; count: number; color: string }[];
+}> = {
+  my: {
+    mapped: 7,
+    applicablePct: 71,
+    applicableOf: 5,
+    applicableTotal: 7,
+    approvedPct: 29,
+    approvedCount: 2,
+    policyPct: 38,
+    policyOf: 2,
+    controlPct: 52,
+    controlOf: 3,
+    openGaps: 7,
+    unreviewed: 3,
+    decisionCounts: { Draft: 3, Reviewed: 2, Approved: 2, Superseded: 0 },
+    gapBreakdown: [
+      { label: "Policy gap", count: 3, color: "bg-red-400" },
+      { label: "Control gap", count: 2, color: "bg-amber-400" },
+      { label: "Evidence missing", count: 3, color: "bg-orange-400" },
+      { label: "Not assessed", count: 3, color: "bg-gray-300" },
+    ],
+  },
+  team: {
+    mapped: 42,
+    applicablePct: 64,
+    applicableOf: 27,
+    applicableTotal: 42,
+    approvedPct: 45,
+    approvedCount: 19,
+    policyPct: 51,
+    policyOf: 14,
+    controlPct: 63,
+    controlOf: 17,
+    openGaps: 23,
+    unreviewed: 11,
+    decisionCounts: { Draft: 11, Reviewed: 12, Approved: 19, Superseded: 0 },
+    gapBreakdown: [
+      { label: "Policy gap", count: 9, color: "bg-red-400" },
+      { label: "Control gap", count: 7, color: "bg-amber-400" },
+      { label: "Evidence missing", count: 10, color: "bg-orange-400" },
+      { label: "Not assessed", count: 8, color: "bg-gray-300" },
+    ],
+  },
+  all: {
+    mapped: 355,
+    applicablePct: 62,
+    applicableOf: 220,
+    applicableTotal: 355,
+    approvedPct: 41,
+    approvedCount: 146,
+    policyPct: 38,
+    policyOf: 84,
+    controlPct: 27,
+    controlOf: 59,
+    openGaps: 48,
+    unreviewed: 23,
+    decisionCounts: { Draft: 23, Reviewed: 186, Approved: 146, Superseded: 0 },
+    gapBreakdown: [
+      { label: "Policy gap", count: 18, color: "bg-red-400" },
+      { label: "Control gap", count: 14, color: "bg-amber-400" },
+      { label: "Evidence missing", count: 21, color: "bg-orange-400" },
+      { label: "Not assessed", count: 12, color: "bg-gray-300" },
+    ],
+  },
+};
+
 function Dashboard({
   regulations,
   onOpenRecord,
   onFilteredMapping,
+  viewScope,
 }: {
   regulations: RegulationMapping[];
   onOpenRecord: (id: string) => void;
   onFilteredMapping: (filter: string) => void;
+  viewScope: ViewScope;
 }) {
-  const total = regulations.length;
-  const applicable = regulations.filter((r) => r.applicability === "Applicable").length;
-  const approved = regulations.filter((r) => r.decisionState === "Approved").length;
-  const avgPolicy = Math.round(regulations.reduce((s, r) => s + r.policyCoverage, 0) / total);
-  const avgControl = Math.round(regulations.reduce((s, r) => s + r.controlCoverage, 0) / total);
-  const openGaps = regulations.flatMap((r) =>
-    r.obligations.filter((o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial")
-  ).length;
-  const unreviewed = regulations.filter((r) => r.decisionState === "Draft").length;
+  const m = SCOPE_METRICS[viewScope];
 
-  const decisionCounts = {
-    Draft: regulations.filter((r) => r.decisionState === "Draft").length,
-    Reviewed: regulations.filter((r) => r.decisionState === "Reviewed").length,
-    Approved: regulations.filter((r) => r.decisionState === "Approved").length,
-    Superseded: regulations.filter((r) => r.decisionState === "Superseded").length,
-  };
-
-  const gapBreakdown = [
-    { label: "Policy gap", count: regulations.filter((r) => r.policyCoverage < 50).length, color: "bg-red-400" },
-    { label: "Control gap", count: regulations.filter((r) => r.controlCoverage < 50).length, color: "bg-amber-400" },
-    {
-      label: "Evidence missing",
-      count: regulations.flatMap((r) =>
-        r.obligations.filter((o) => o.coverageStatus === "Not covered" && o.linkedControls.length === 0)
-      ).length,
-      color: "bg-orange-400",
-    },
-    {
-      label: "Not assessed",
-      count: regulations.flatMap((r) =>
-        r.obligations.filter((o) => o.coverageStatus === "Not assessed")
-      ).length,
-      color: "bg-gray-300",
-    },
-  ];
-
+  // Work queue is always personal (Maya's) regardless of scope
   const workQueue = regulations.filter((r) => r.decisionState !== "Approved");
 
   return (
     <div className="overflow-y-auto h-full p-5 space-y-5">
-      {/* KPI row */}
+      {/* KPI row — all values from scope-specific dataset */}
       <div className="flex gap-3">
         <KpiCard
           label="Applicable"
-          value={`${Math.round((applicable / total) * 100)}%`}
-          sub={`${applicable} out of ${total} items`}
+          value={`${m.applicablePct}%`}
+          sub={`${m.applicableOf} out of ${m.mapped} items`}
           accent="text-gray-900"
           onClick={() => onFilteredMapping("applicable")}
         />
         <KpiCard
           label="Control Coverage"
-          value={`${avgControl}%`}
-          sub={`${Math.round(applicable * (avgControl / 100))} out of ${applicable} applicable items`}
-          accent={avgControl < 50 ? "text-red-600" : "text-gray-900"}
+          value={`${m.controlPct}%`}
+          sub={`${m.controlOf} out of ${m.applicableOf} applicable items`}
+          accent={m.controlPct < 50 ? "text-red-600" : "text-gray-900"}
           onClick={() => onFilteredMapping("control-gap")}
         />
         <KpiCard
           label="Policy Coverage"
-          value={`${avgPolicy}%`}
-          sub={`${Math.round(applicable * (avgPolicy / 100))} out of ${applicable} applicable items`}
-          accent={avgPolicy < 50 ? "text-red-600" : "text-gray-900"}
+          value={`${m.policyPct}%`}
+          sub={`${m.policyOf} out of ${m.applicableOf} applicable items`}
+          accent={m.policyPct < 50 ? "text-red-600" : "text-gray-900"}
           onClick={() => onFilteredMapping("policy-gap")}
         />
         <KpiCard
           label="Approved Decisions"
-          value={`${Math.round((approved / total) * 100)}%`}
-          sub={`${approved} of ${total} mapped`}
+          value={`${m.approvedPct}%`}
+          sub={`${m.approvedCount} of ${m.mapped} mapped`}
           accent="text-green-700"
           onClick={() => onFilteredMapping("approved")}
         />
         <KpiCard
           label="Open Coverage Gaps"
-          value={openGaps}
+          value={m.openGaps}
           sub="obligations needing action"
           accent="text-red-600"
           onClick={() => onFilteredMapping("uncovered")}
         />
         <KpiCard
           label="Unreviewed"
-          value={unreviewed}
+          value={m.unreviewed}
           sub="in Draft state"
-          accent={unreviewed > 0 ? "text-amber-600" : "text-green-600"}
+          accent={m.unreviewed > 0 ? "text-amber-600" : "text-green-600"}
           onClick={() => onFilteredMapping("draft")}
         />
       </div>
@@ -351,19 +432,19 @@ function Dashboard({
             Decision lifecycle
           </h3>
           <div className="space-y-3">
-            {Object.entries(decisionCounts).map(([state, count]) => {
+            {Object.entries(m.decisionCounts).map(([state, count]) => {
               const barColor =
                 state === "Approved" ? "bg-green-500" :
                 state === "Reviewed" ? "bg-blue-500" :
                 state === "Draft" ? "bg-gray-300" : "bg-purple-400";
-              const maxCount = Math.max(...Object.values(decisionCounts), 1);
+              const maxCount = Math.max(...Object.values(m.decisionCounts), 1);
               return (
                 <div key={state} className="flex items-center gap-3">
                   <span className="text-xs text-gray-500 w-20 flex-shrink-0">{state}</span>
                   <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full ${barColor} rounded-full`} style={{ width: `${(count / maxCount) * 100}%` }} />
+                    <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${(count / maxCount) * 100}%` }} />
                   </div>
-                  <span className="text-xs font-semibold text-gray-700 w-4 text-right">{count}</span>
+                  <span className="text-xs font-semibold text-gray-700 w-8 text-right">{count}</span>
                 </div>
               );
             })}
@@ -376,15 +457,15 @@ function Dashboard({
             Gap breakdown
           </h3>
           <div className="space-y-3">
-            {gapBreakdown.map(({ label, count, color }) => {
-              const max = Math.max(...gapBreakdown.map((g) => g.count), 1);
+            {m.gapBreakdown.map(({ label, count, color }) => {
+              const max = Math.max(...m.gapBreakdown.map((g) => g.count), 1);
               return (
                 <div key={label} className="flex items-center gap-3">
                   <span className="text-xs text-gray-500 w-28 flex-shrink-0">{label}</span>
                   <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full ${color} rounded-full`} style={{ width: `${(count / max) * 100}%` }} />
+                    <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${(count / max) * 100}%` }} />
                   </div>
-                  <span className="text-xs font-semibold text-gray-700 w-4 text-right">{count}</span>
+                  <span className="text-xs font-semibold text-gray-700 w-8 text-right">{count}</span>
                 </div>
               );
             })}
@@ -1361,6 +1442,7 @@ function Placeholder({ title, icon: Icon }: { title: string; icon: React.Element
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>("dashboard");
+  const [viewScope, setViewScope] = useState<ViewScope>("my");
   const [regulations, setRegulations] = useState<RegulationMapping[]>(MOCK_REGULATIONS);
   const [actions, setActions] = useState<DownstreamAction[]>(INITIAL_ACTIONS);
   const [selectedRegId, setSelectedRegId] = useState<string | null>(null);
@@ -1434,7 +1516,11 @@ export default function App() {
       />
 
       <div className="flex flex-col flex-1 overflow-hidden bg-white">
-        <TopBar onExportAudit={() => showToast("Audit pack export initiated. Download will begin shortly.")} />
+        <TopBar
+          onExportAudit={() => showToast("Audit pack export initiated. Download will begin shortly.")}
+          viewScope={viewScope}
+          setViewScope={setViewScope}
+        />
 
         <main className="flex-1 overflow-hidden bg-gray-50">
           {activeView === "dashboard" && (
@@ -1442,6 +1528,7 @@ export default function App() {
               regulations={regulations}
               onOpenRecord={handleOpenRecord}
               onFilteredMapping={handleFilteredMapping}
+              viewScope={viewScope}
             />
           )}
 
