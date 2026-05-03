@@ -34,6 +34,17 @@ function coverageBadge(s: CoverageStatus) {
 function Badge({ children, className }: { children: React.ReactNode; className: string }) {
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}>{children}</span>;
 }
+function PillGroup({ items, colorClass, maxShow = 2 }: { items: string[]; colorClass: string; maxShow?: number }) {
+  return (
+    <div className="flex flex-wrap gap-1 min-w-0">
+      {items.slice(0, maxShow).map((item) => (
+        <span key={item} className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full border font-medium truncate max-w-[120px] ${colorClass}`} title={item}>{item}</span>
+      ))}
+      {items.length > maxShow && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 font-medium">+{items.length - maxShow}</span>}
+      {items.length === 0 && <span className="text-[10px] text-gray-300">—</span>}
+    </div>
+  );
+}
 function CoverageBar({ value }: { value: number }) {
   const c = value >= 80 ? "bg-green-500" : value >= 50 ? "bg-amber-400" : "bg-red-400";
   return (
@@ -444,6 +455,11 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
   // Audit history
   const [auditExpanded, setAuditExpanded] = useState(false);
 
+  // Inline editing
+  const [addPolicyDraft, setAddPolicyDraft] = useState("");
+  const [addControlDraft, setAddControlDraft] = useState("");
+  const [addTagDraft, setAddTagDraft] = useState("");
+
   // Applicability (right panel)
   const [applicabilityDraft, setApplicabilityDraft] = useState<Applicability>(reg.applicability);
   const [showRationale, setShowRationale] = useState(false);
@@ -454,6 +470,15 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
 
   const addAudit = (event: Omit<AuditEvent, "id">) =>
     updateReg((r) => ({ ...r, auditHistory: [...r.auditHistory, { ...event, id: `aud-${Date.now()}` }] }));
+
+  const handleAddToObl = (oblId: string, field: "linkedPolicies" | "linkedControls" | "riskTags", value: string) => {
+    if (!value.trim()) return;
+    updateReg((r) => ({ ...r, obligations: r.obligations.map((o) => o.id === oblId ? { ...o, [field]: [...o[field], value.trim()] } : o) }));
+  };
+
+  const handleRemoveFromObl = (oblId: string, field: "linkedPolicies" | "linkedControls" | "riskTags", value: string) => {
+    updateReg((r) => ({ ...r, obligations: r.obligations.map((o) => o.id === oblId ? { ...o, [field]: (o[field] as string[]).filter((v) => v !== value) } : o) }));
+  };
 
   const handleHandoff = () => {
     if (!handoffAssignee) return;
@@ -597,12 +622,15 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-left">
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Requirement</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Coverage</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Policies</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Controls</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Evidence</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Section</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Sub</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Requirement Summary</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Applicability</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Type</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Policy Statements</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Controls</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Risk Tags</th>
+                  <th className="px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">Status</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
@@ -615,57 +643,139 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
                     <React.Fragment key={obl.id}>
                       <tr
                         className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${rowBg}`}
-                        onClick={() => { setExpandedOblId(isExpanded ? null : obl.id); setOblChatPrompt(null); setCommentDraft(""); }}
+                        onClick={() => { setExpandedOblId(isExpanded ? null : obl.id); setOblChatPrompt(null); setCommentDraft(""); setAddPolicyDraft(""); setAddControlDraft(""); setAddTagDraft(""); }}
                       >
-                        <td className="px-4 py-3 max-w-xs">
-                          <p className="text-xs text-gray-900 leading-relaxed">{obl.text}</p>
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <Badge className={riskBadge(reg.risk)}>{reg.risk}</Badge>
-                            <Badge className="bg-purple-100 text-purple-700 border border-purple-300">{reg.type}</Badge>
-                          </div>
-                          {obl.reasonCode && <p className="text-[10px] text-gray-400 italic mt-0.5">{obl.reasonCode}</p>}
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="text-[10px] font-mono text-gray-500">{obl.section || "—"}</span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap"><Badge className={coverageBadge(obl.coverageStatus)}>{obl.coverageStatus}</Badge></td>
-                        <td className="px-4 py-3 text-xs">{obl.linkedPolicies.length > 0 ? <span className="text-green-700 font-semibold">{obl.linkedPolicies.length}</span> : <span className="text-red-400">None</span>}</td>
-                        <td className="px-4 py-3 text-xs">{obl.linkedControls.length > 0 ? <span className="text-green-700 font-semibold">{obl.linkedControls.length}</span> : <span className="text-red-400">None</span>}</td>
-                        <td className="px-4 py-3 text-xs">{obl.evidence.length > 0 ? <span className="text-green-700 font-semibold">{obl.evidence.length}</span> : <span className="text-red-400">None</span>}</td>
-                        <td className="px-4 py-3">
-                          {obl.comments.length > 0
-                            ? <span className="flex items-center gap-1 text-[10px] text-indigo-600 font-medium"><MessageSquare className="w-3 h-3" />{obl.comments.length}</span>
-                            : <span className="text-[10px] text-gray-300">—</span>}
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="text-[10px] font-mono text-gray-400">{obl.subsection || "—"}</span>
                         </td>
-                        <td className="px-4 py-3">{isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}</td>
+                        <td className="px-3 py-3 max-w-[240px]">
+                          <p className="text-xs text-gray-900 leading-relaxed">{obl.aiSummary}</p>
+                          <span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 border border-indigo-100 font-medium">AI</span>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <Badge className={applicabilityBadge(obl.oblApplicability)}>{obl.oblApplicability === "Partially applicable" ? "Partial" : obl.oblApplicability === "Not applicable" ? "N/A" : "Applicable"}</Badge>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <Badge className="bg-purple-100 text-purple-700 border border-purple-300">{reg.type}</Badge>
+                        </td>
+                        <td className="px-3 py-3 min-w-[140px]">
+                          <PillGroup items={obl.linkedPolicies} colorClass="bg-blue-50 text-blue-700 border-blue-200" />
+                        </td>
+                        <td className="px-3 py-3 min-w-[140px]">
+                          <PillGroup items={obl.linkedControls} colorClass="bg-emerald-50 text-emerald-700 border-emerald-200" />
+                        </td>
+                        <td className="px-3 py-3 min-w-[120px]">
+                          <PillGroup items={obl.riskTags} colorClass="bg-orange-50 text-orange-700 border-orange-200" />
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <Badge className={coverageBadge(obl.coverageStatus)}>{obl.coverageStatus}</Badge>
+                        </td>
+                        <td className="px-3 py-3">{isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}</td>
                       </tr>
 
                       {isExpanded && (
                         <tr className="border-b border-indigo-100">
-                          <td colSpan={7} className="px-4 py-4 bg-indigo-50/70">
-                            <div className="space-y-4">
-                              {/* Policies / Controls / Evidence */}
-                              <div className="grid grid-cols-3 gap-4">
-                                {[
-                                  { label: "Policies", items: obl.linkedPolicies },
-                                  { label: "Controls", items: obl.linkedControls },
-                                  { label: "Evidence", items: obl.evidence },
-                                ].map(({ label, items }) => (
-                                  <div key={label}>
-                                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1.5">{label}</p>
-                                    {items.length > 0
-                                      ? items.map((item) => <p key={item} className="text-xs text-gray-700 mb-0.5 flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />{item}</p>)
-                                      : <p className="text-xs text-red-500">No {label.toLowerCase()} linked</p>}
-                                  </div>
-                                ))}
+                          <td colSpan={10} className="px-5 py-5 bg-indigo-50/60" onClick={(e) => e.stopPropagation()}>
+                            <div className="space-y-5">
+
+                              {/* Full requirement text */}
+                              <div>
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">Full requirement</p>
+                                <p className="text-xs text-gray-800 leading-relaxed">{obl.text}</p>
+                                {obl.reasonCode && <p className="text-[10px] text-amber-600 italic mt-1">{obl.reasonCode}</p>}
                               </div>
 
-                              {/* AI chat */}
-                              <div className="border-t border-indigo-200 pt-3">
-                                <p className="text-[10px] font-semibold text-indigo-600 mb-1.5">Ask AI about this requirement</p>
-                                <div className="flex gap-1.5">
+                              {/* Editable pills grid */}
+                              <div className="grid grid-cols-3 gap-4">
+                                {/* Policy Statements */}
+                                <div>
+                                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Policy Statements</p>
+                                  <div className="flex flex-wrap gap-1 mb-2">
+                                    {obl.linkedPolicies.map((p) => (
+                                      <span key={p} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                                        {p}
+                                        <button onClick={() => handleRemoveFromObl(obl.id, "linkedPolicies", p)} className="hover:text-red-500 ml-0.5"><X className="w-2.5 h-2.5" /></button>
+                                      </span>
+                                    ))}
+                                    {obl.linkedPolicies.length === 0 && <span className="text-[10px] text-red-400">None linked</span>}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <input value={addPolicyDraft} onChange={(e) => setAddPolicyDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { handleAddToObl(obl.id, "linkedPolicies", addPolicyDraft); setAddPolicyDraft(""); }}} placeholder="Add policy…" className="flex-1 min-w-0 px-2 py-1 text-[10px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                                    <button onClick={() => { handleAddToObl(obl.id, "linkedPolicies", addPolicyDraft); setAddPolicyDraft(""); }} disabled={!addPolicyDraft.trim()} className="px-2 py-1 text-[10px] bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-40 font-medium whitespace-nowrap">+ Add</button>
+                                  </div>
+                                </div>
+
+                                {/* Controls */}
+                                <div>
+                                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Controls</p>
+                                  <div className="flex flex-wrap gap-1 mb-2">
+                                    {obl.linkedControls.map((c) => (
+                                      <span key={c} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                                        {c}
+                                        <button onClick={() => handleRemoveFromObl(obl.id, "linkedControls", c)} className="hover:text-red-500 ml-0.5"><X className="w-2.5 h-2.5" /></button>
+                                      </span>
+                                    ))}
+                                    {obl.linkedControls.length === 0 && <span className="text-[10px] text-red-400">None mapped</span>}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <input value={addControlDraft} onChange={(e) => setAddControlDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { handleAddToObl(obl.id, "linkedControls", addControlDraft); setAddControlDraft(""); }}} placeholder="Add control…" className="flex-1 min-w-0 px-2 py-1 text-[10px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                                    <button onClick={() => { handleAddToObl(obl.id, "linkedControls", addControlDraft); setAddControlDraft(""); }} disabled={!addControlDraft.trim()} className="px-2 py-1 text-[10px] bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-40 font-medium whitespace-nowrap">+ Add</button>
+                                  </div>
+                                </div>
+
+                                {/* Risk Tags */}
+                                <div>
+                                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Risk Tags</p>
+                                  <div className="flex flex-wrap gap-1 mb-2">
+                                    {obl.riskTags.map((t) => (
+                                      <span key={t} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-medium">
+                                        {t}
+                                        <button onClick={() => handleRemoveFromObl(obl.id, "riskTags", t)} className="hover:text-red-500 ml-0.5"><X className="w-2.5 h-2.5" /></button>
+                                      </span>
+                                    ))}
+                                    {obl.riskTags.length === 0 && <span className="text-[10px] text-gray-400">None</span>}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <input value={addTagDraft} onChange={(e) => setAddTagDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { handleAddToObl(obl.id, "riskTags", addTagDraft); setAddTagDraft(""); }}} placeholder="Add tag…" className="flex-1 min-w-0 px-2 py-1 text-[10px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                                    <button onClick={() => { handleAddToObl(obl.id, "riskTags", addTagDraft); setAddTagDraft(""); }} disabled={!addTagDraft.trim()} className="px-2 py-1 text-[10px] bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-40 font-medium whitespace-nowrap">+ Add</button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Evidence */}
+                              <div className="border-t border-indigo-100 pt-4">
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Evidence</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {obl.evidence.map((e) => (
+                                    <span key={e} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-medium">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-green-500" />{e}
+                                    </span>
+                                  ))}
+                                  {obl.evidence.length === 0 && <span className="text-[10px] text-red-400">No evidence linked</span>}
+                                  <button className="inline-flex items-center gap-1 text-[10px] text-indigo-600 border border-dashed border-indigo-300 px-2 py-0.5 rounded-full hover:bg-indigo-50"><Plus className="w-2.5 h-2.5" /> Add evidence</button>
+                                </div>
+                              </div>
+
+                              {/* AI action points */}
+                              <div className="border-t border-indigo-100 pt-4">
+                                <p className="text-[10px] text-indigo-600 font-semibold uppercase tracking-wide mb-2 flex items-center gap-1"><Zap className="w-3 h-3" /> AI action points</p>
+                                <div className="space-y-1.5">
+                                  {obl.aiActionPoints.map((pt, i) => (
+                                    <div key={i} className="flex items-start gap-2 text-[10px] text-gray-700">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0 mt-1" />
+                                      {pt}
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex gap-1.5 mt-3">
                                   {["What is not covered?", "What evidence supports this?"].map((prompt) => (
                                     <button
                                       key={prompt}
-                                      onClick={(e) => { e.stopPropagation(); setOblChatPrompt(oblChatPrompt === prompt ? null : prompt); }}
-                                      className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition-colors ${oblChatPrompt === prompt ? "bg-indigo-600 text-white border-indigo-600" : "border-indigo-200 text-indigo-600 hover:bg-indigo-100"}`}
+                                      onClick={() => setOblChatPrompt(oblChatPrompt === prompt ? null : prompt)}
+                                      className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition-colors ${oblChatPrompt === prompt ? "bg-indigo-600 text-white border-indigo-600" : "border-indigo-200 text-indigo-600 hover:bg-indigo-50"}`}
                                     >{prompt}</button>
                                   ))}
                                 </div>
@@ -677,9 +787,9 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
                                 )}
                               </div>
 
-                              {/* Comments */}
-                              <div className="border-t border-indigo-200 pt-3 space-y-2">
-                                <p className="text-[10px] font-semibold text-gray-600">Discussion</p>
+                              {/* Discussion */}
+                              <div className="border-t border-indigo-100 pt-4 space-y-2">
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Discussion{obl.comments.length > 0 && ` (${obl.comments.length})`}</p>
                                 {obl.comments.map((c) => (
                                   <div key={c.id} className="bg-white rounded-md p-2 border border-gray-100">
                                     <div className="flex items-center gap-1.5 mb-0.5">
@@ -690,20 +800,20 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
                                     <p className="text-[10px] text-gray-600 leading-relaxed">{c.text}</p>
                                   </div>
                                 ))}
-                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-2">
                                   <input type="text" value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSendComment(obl.id); }} placeholder="Add a note…" className="flex-1 px-2 py-1.5 text-[10px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white" />
                                   <button onClick={() => handleSendComment(obl.id)} disabled={!commentDraft.trim()} className="px-2.5 py-1.5 text-[10px] bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 font-medium">Send</button>
                                 </div>
                               </div>
 
                               {/* Action buttons */}
-                              <div className="flex items-center gap-2 border-t border-indigo-200 pt-3" onClick={(e) => e.stopPropagation()}>
-                                <button className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-indigo-600 border border-gray-200 px-2 py-1 rounded bg-white"><Plus className="w-3 h-3" /> Add evidence</button>
+                              <div className="flex items-center gap-2 border-t border-indigo-100 pt-4">
                                 {hasAction && <Badge className="bg-indigo-100 text-indigo-700 border border-indigo-200">Action created</Badge>}
                                 {(obl.coverageStatus === "Not covered" || obl.coverageStatus === "Partial") && !hasAction && (
-                                  <button onClick={() => onCreateAction(obl, reg)} className="flex items-center gap-1 text-[10px] text-white bg-indigo-600 hover:bg-indigo-700 px-2 py-1 rounded font-medium"><ArrowRight className="w-3 h-3" /> Create downstream action</button>
+                                  <button onClick={() => onCreateAction(obl, reg)} className="flex items-center gap-1 text-[10px] text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded font-medium"><ArrowRight className="w-3 h-3" /> Create downstream action</button>
                                 )}
                               </div>
+
                             </div>
                           </td>
                         </tr>
