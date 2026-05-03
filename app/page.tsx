@@ -12,26 +12,27 @@ import {
   X,
   Check,
   AlertTriangle,
-  Download,
-  UserPlus,
   ExternalLink,
   Plus,
   Edit3,
   RotateCcw,
   ArrowRight,
-  FileCheck,
   AlertCircle,
   Info,
   CheckCircle2,
   Circle,
   TrendingUp,
   Zap,
+  MessageSquare,
+  Users,
 } from "lucide-react";
 
 import {
   MOCK_REGULATIONS,
   INITIAL_ACTIONS,
   CONTEXTUAL_CHAT_RESPONSES,
+  TEAM_MEMBERS,
+  STAGE_SEQUENCE,
   type RegulationMapping,
   type Obligation,
   type AuditEvent,
@@ -39,6 +40,7 @@ import {
   type DecisionState,
   type Applicability,
   type CoverageStatus,
+  type AssignmentStage,
 } from "@/lib/mockData";
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
@@ -255,7 +257,6 @@ function KpiCard({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-// Scope-specific KPI datasets. "my" = Maya's personal view, "team" = US compliance team, "all" = full org.
 const SCOPE_METRICS: Record<ViewScope, {
   mapped: number;
   applicablePct: number;
@@ -350,12 +351,12 @@ function Dashboard({
 }) {
   const m = SCOPE_METRICS[viewScope];
 
-  // Work queue is always personal (Maya's) regardless of scope
-  const workQueue = regulations.filter((r) => r.decisionState !== "Approved");
+  // Work queue is always personal — only regulations currently assigned to Maya
+  const workQueue = regulations.filter((r) => r.workflow.currentAssignee === "Maya Patel");
 
   return (
     <div className="overflow-y-auto h-full p-5 space-y-5">
-      {/* KPI row — all values from scope-specific dataset */}
+      {/* KPI row */}
       <div className="flex gap-3">
         <KpiCard
           label="Applicable"
@@ -450,74 +451,81 @@ function Dashboard({
         </div>
       </div>
 
-      {/* Work queue */}
+      {/* Work queue — personal (Maya's assignments only) */}
       <div className="bg-white border border-gray-200 rounded-lg">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900">Work queue</h3>
-          <span className="text-xs text-gray-400">{workQueue.length} items requiring attention</span>
+          <span className="text-xs text-gray-400">{workQueue.length} items assigned to you</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                {["Regulation", "Decision state", "Applicability", "Coverage issue", "Owner", "Next step", ""].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {workQueue.map((reg) => {
-                const uncoveredCount = reg.obligations.filter(
-                  (o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial"
-                ).length;
-                const notAssessed = reg.obligations.filter((o) => o.coverageStatus === "Not assessed").length;
-                const issue =
-                  notAssessed > 0
-                    ? `${notAssessed} obligation${notAssessed > 1 ? "s" : ""} not assessed`
-                    : uncoveredCount > 0
-                    ? `${uncoveredCount} uncovered obligation${uncoveredCount > 1 ? "s" : ""}`
-                    : reg.policyCoverage < 50
-                    ? "Policy gap"
-                    : "Incomplete rationale";
-                const next =
-                  reg.decisionState === "Draft" && notAssessed > 0
-                    ? "Assess coverage"
-                    : reg.decisionState === "Draft"
-                    ? "Review rationale"
-                    : "Add evidence";
+        {workQueue.length === 0 ? (
+          <div className="py-12 text-center">
+            <CheckCircle2 className="w-8 h-8 text-green-200 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">No items currently assigned to you.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {["Regulation", "Stage", "Decision state", "Coverage issue", "Next step", ""].map((h) => (
+                    <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {workQueue.map((reg) => {
+                  const uncoveredCount = reg.obligations.filter(
+                    (o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial"
+                  ).length;
+                  const notAssessed = reg.obligations.filter((o) => o.coverageStatus === "Not assessed").length;
+                  const issue =
+                    notAssessed > 0
+                      ? `${notAssessed} obligation${notAssessed > 1 ? "s" : ""} not assessed`
+                      : uncoveredCount > 0
+                      ? `${uncoveredCount} uncovered obligation${uncoveredCount > 1 ? "s" : ""}`
+                      : reg.policyCoverage < 50
+                      ? "Policy gap"
+                      : "Incomplete rationale";
+                  const next =
+                    reg.workflow.currentStage === "Applicability" ? "Assess applicability" :
+                    reg.workflow.currentStage === "Obligations" ? "Review obligations" :
+                    reg.workflow.currentStage === "Controls & Evidence" ? "Map controls & evidence" :
+                    "Approve decision";
 
-                return (
-                  <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-medium text-gray-900">{reg.title}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className={decisionBadge(reg.decisionState)}>{reg.decisionState}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className={applicabilityBadge(reg.applicability)}>{reg.applicability}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-600">{issue}</td>
-                    <td className="px-4 py-3 text-xs text-gray-700">{reg.assignee}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs text-amber-700 font-medium">{next}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => onOpenRecord(reg.id)}
-                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
-                      >
-                        Open record <ChevronRight className="w-3 h-3" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  return (
+                    <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="text-xs font-medium text-gray-900">{reg.title}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          {reg.workflow.currentStage}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={decisionBadge(reg.decisionState)}>{reg.decisionState}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{issue}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-amber-700 font-medium">{next}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => onOpenRecord(reg.id)}
+                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
+                        >
+                          Open record <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -575,7 +583,6 @@ function MappingTable({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Search bar row — matching Cardamon style */}
       <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center gap-3 flex-shrink-0">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -655,9 +662,6 @@ function MappingTable({
               const hasGap = reg.obligations.some(
                 (o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial"
               );
-              const uncoveredOblCount = reg.obligations.filter(
-                (o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial"
-              ).length;
               return (
                 <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3.5">
@@ -688,23 +692,17 @@ function MappingTable({
                   </td>
                   <td className="px-3 py-3.5 text-xs text-gray-400">—</td>
                   <td className="px-3 py-3.5">
-                    <div className="space-y-0.5">
-                      <CoverageBar value={reg.controlCoverage} />
-                    </div>
+                    <CoverageBar value={reg.controlCoverage} />
                   </td>
                   <td className="px-3 py-3.5">
                     {reg.policyCoverage < 30 ? (
-                      <span className="text-xs text-gray-400">Policies not required</span>
+                      <span className="text-xs text-gray-400">Not required</span>
                     ) : (
                       <CoverageBar value={reg.policyCoverage} />
                     )}
                   </td>
                   <td className="px-3 py-3.5 text-xs text-gray-500">
-                    {reg.assignee === "Unassigned" ? (
-                      <span className="text-gray-300">Unassigned</span>
-                    ) : (
-                      reg.assignee
-                    )}
+                    {reg.workflow.currentAssignee}
                   </td>
                   <td className="px-3 py-3.5">
                     <Badge className={reg.decisionState === "Approved" ? applicabilityBadge("Applicable") : pendingBadge()}>
@@ -774,6 +772,7 @@ function ActionDrawer({
       evidenceExpected: ["Updated policy", "Control mapping", "Approval record"],
       dueDate,
       priority,
+      stageType: "Remediation",
     };
     onCreate(action);
   };
@@ -904,14 +903,6 @@ function ActionDrawer({
 
 // ─── Decision Record ───────────────────────────────────────────────────────────
 
-const CHAT_PROMPTS = [
-  "Why is this applicable?",
-  "Explain the source",
-  "What evidence supports this?",
-  "What is not covered?",
-  "Challenge this decision",
-];
-
 function DecisionRecord({
   regulation: initialReg,
   regulations,
@@ -931,13 +922,26 @@ function DecisionRecord({
 }) {
   const reg = regulations.find((r) => r.id === initialReg.id) || initialReg;
 
+  // Existing state
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState(reg.humanSummary);
   const [rationale, setRationale] = useState("");
   const [showRationale, setShowRationale] = useState(false);
   const [pendingField, setPendingField] = useState<"summary" | "applicability" | null>(null);
   const [applicabilityDraft, setApplicabilityDraft] = useState<Applicability>(reg.applicability);
-  const [chatPrompt, setChatPrompt] = useState<string | null>(null);
+
+  // Hand-off state
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffAssignee, setHandoffAssignee] = useState("");
+  const [handoffNote, setHandoffNote] = useState("");
+
+  // Inline AI chat state (separate per section)
+  const [applicabilityChat, setApplicabilityChat] = useState<string | null>(null);
+  const [obligationsChat, setObligationsChat] = useState<string | null>(null);
+
+  // Inline obligation comments state
+  const [openCommentOblId, setOpenCommentOblId] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
 
   const updateReg = (updater: (r: RegulationMapping) => RegulationMapping) => {
     setRegulations((prev) => prev.map((r) => (r.id === reg.id ? updater(r) : r)));
@@ -1010,6 +1014,68 @@ function DecisionRecord({
     showToast("Decision approved. Audit record updated.");
   };
 
+  const handleHandoff = () => {
+    if (!handoffAssignee) return;
+    const currentStageIdx = STAGE_SEQUENCE.indexOf(reg.workflow.currentStage);
+    const nextStage = STAGE_SEQUENCE[Math.min(currentStageIdx + 1, STAGE_SEQUENCE.length - 1)];
+    updateReg((r) => ({
+      ...r,
+      workflow: {
+        currentStage: nextStage,
+        currentAssignee: handoffAssignee,
+        history: [
+          ...r.workflow.history,
+          {
+            stage: r.workflow.currentStage,
+            assignee: r.workflow.currentAssignee,
+            completedAt: new Date().toISOString(),
+            note: handoffNote || undefined,
+          },
+        ],
+      },
+    }));
+    addAudit({
+      actor: "Maya Patel",
+      action: `Record handed off to ${handoffAssignee} for ${nextStage}`,
+      timestamp: new Date().toISOString(),
+      rationale: handoffNote || undefined,
+    });
+    showToast(`Record handed off to ${handoffAssignee}.`);
+    setHandoffOpen(false);
+    setHandoffAssignee("");
+    setHandoffNote("");
+  };
+
+  const handleSendComment = (oblId: string) => {
+    if (!commentDraft.trim()) return;
+    updateReg((r) => ({
+      ...r,
+      obligations: r.obligations.map((o) =>
+        o.id === oblId
+          ? {
+              ...o,
+              comments: [
+                ...o.comments,
+                {
+                  id: `c-${Date.now()}`,
+                  actor: "Maya Patel",
+                  text: commentDraft,
+                  timestamp: new Date().toISOString(),
+                },
+              ],
+            }
+          : o
+      ),
+    }));
+    addAudit({
+      actor: "Maya Patel",
+      action: "Comment added to obligation",
+      timestamp: new Date().toISOString(),
+      after: commentDraft.slice(0, 80),
+    });
+    setCommentDraft("");
+  };
+
   const checklistItems = [
     { label: "AI output preserved", done: true },
     { label: "Human rationale captured", done: !!reg.humanRationale },
@@ -1020,9 +1086,11 @@ function DecisionRecord({
     { label: "Approved decision", done: reg.decisionState === "Approved" },
   ];
 
+  const isApproved = reg.decisionState === "Approved";
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Record header bar */}
+      {/* Row 1 — Record header */}
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center gap-3 flex-shrink-0 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700">
           <RotateCcw className="w-3 h-3" /> Back
@@ -1040,20 +1108,101 @@ function DecisionRecord({
               Move to Reviewed
             </button>
           )}
-          {reg.decisionState !== "Approved" && (
+          {!isApproved && (
             <button onClick={handleApprove} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
               Approve
             </button>
           )}
           <button onClick={() => showToast("Audit pack exported (simulated).")} className="flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50">
-            <ExternalLink className="w-3 h-3" /> Export audit history
+            <ExternalLink className="w-3 h-3" /> Export
           </button>
         </div>
       </div>
 
+      {/* Row 2 — Workflow hand-off sub-bar */}
+      <div className="bg-gray-50 border-b border-gray-200 px-5 py-2 flex items-center gap-3 flex-shrink-0">
+        <span className="text-xs text-gray-500">
+          Currently with:{" "}
+          <span className="font-semibold text-gray-800">{reg.workflow.currentAssignee}</span>
+        </span>
+        <span className="text-gray-300">·</span>
+        <span className="text-xs text-gray-500">
+          Stage:{" "}
+          <span className="font-semibold text-indigo-700">{reg.workflow.currentStage}</span>
+        </span>
+        {reg.workflow.history.length > 0 && (
+          <>
+            <span className="text-gray-300">·</span>
+            <span className="text-xs text-gray-400">
+              {reg.workflow.history.length} stage{reg.workflow.history.length !== 1 ? "s" : ""} completed
+            </span>
+          </>
+        )}
+        <div className="flex-1" />
+        {!isApproved && (
+          <button
+            onClick={() => setHandoffOpen(!handoffOpen)}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md border transition-colors ${
+              handoffOpen
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+            }`}
+          >
+            Hand off <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Row 3 — Inline hand-off panel */}
+      {handoffOpen && (
+        <div className="bg-white border-b border-indigo-100 px-5 py-4 flex-shrink-0">
+          <p className="text-xs font-semibold text-gray-800 mb-3">Hand off this record</p>
+          <div className="flex items-end gap-4">
+            <div className="flex-1 space-y-1">
+              <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wide">Reassign to</label>
+              <select
+                value={handoffAssignee}
+                onChange={(e) => setHandoffAssignee(e.target.value)}
+                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">Select person…</option>
+                {TEAM_MEMBERS.filter((m) => m !== reg.workflow.currentAssignee).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 space-y-1">
+              <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wide">Note for next reviewer</label>
+              <input
+                type="text"
+                value={handoffNote}
+                onChange={(e) => setHandoffNote(e.target.value)}
+                placeholder="Optional note…"
+                className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => { setHandoffOpen(false); setHandoffAssignee(""); setHandoffNote(""); }}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-md text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleHandoff}
+                disabled={!handoffAssignee}
+                className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-medium disabled:opacity-40"
+              >
+                Confirm hand-off
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Two-column content */}
       <div className="flex-1 flex overflow-hidden bg-gray-50">
-        {/* Left */}
+        {/* Left column */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 min-w-0">
 
           {/* Source & Summary */}
@@ -1067,7 +1216,7 @@ function DecisionRecord({
             </div>
 
             <div>
-              <p className="text-[10px] font-semibold text-indigo-600 mb-1.5 flex items-center gap-1">
+              <p className="text-[10px] font-semibold text-indigo-600 mb-1.5">
                 <span className="px-1.5 py-0.5 bg-indigo-50 rounded border border-indigo-100">AI-generated</span>
               </p>
               <p className="text-xs text-gray-600 leading-relaxed bg-blue-50 px-3 py-3 rounded-md border border-blue-100">
@@ -1076,7 +1225,7 @@ function DecisionRecord({
             </div>
 
             <div>
-              <p className="text-[10px] font-semibold text-gray-500 mb-1.5 flex items-center gap-1">
+              <p className="text-[10px] font-semibold text-gray-500 mb-1.5">
                 <span className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200">Human-edited</span>
               </p>
               {editingSummary ? (
@@ -1173,6 +1322,32 @@ function DecisionRecord({
               <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Human rationale</p>
               <p className="text-xs text-gray-600 leading-relaxed">{reg.humanRationale}</p>
             </div>
+
+            {/* Inline AI chat — Applicability section */}
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-[10px] font-semibold text-indigo-600 mb-1.5">Ask AI</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["Why is this applicable?", "Challenge this decision"].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setApplicabilityChat(applicabilityChat === prompt ? null : prompt)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition-colors ${
+                      applicabilityChat === prompt
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                    }`}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+              {applicabilityChat && (
+                <div className="mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <p className="text-[10px] font-semibold text-blue-700 mb-1">{applicabilityChat}</p>
+                  <p className="text-xs text-gray-700 leading-relaxed">{CONTEXTUAL_CHAT_RESPONSES[applicabilityChat]}</p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Obligations */}
@@ -1181,9 +1356,13 @@ function DecisionRecord({
               Obligations &amp; coverage
               <span className="ml-2 text-xs font-normal text-gray-400">{reg.obligations.length} obligations</span>
             </h3>
+
             <div className="space-y-3">
               {reg.obligations.map((obl) => {
                 const hasActionCreated = actionObligationIds.has(obl.id);
+                const commentCount = obl.comments.length;
+                const commentOpen = openCommentOblId === obl.id;
+
                 return (
                   <div
                     key={obl.id}
@@ -1201,11 +1380,24 @@ function DecisionRecord({
                         {hasActionCreated && (
                           <Badge className="bg-indigo-100 text-indigo-700 border border-indigo-200">Action created</Badge>
                         )}
+                        <button
+                          onClick={() => {
+                            setOpenCommentOblId(commentOpen ? null : obl.id);
+                            setCommentDraft("");
+                          }}
+                          className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-indigo-600 border border-gray-200 px-1.5 py-0.5 rounded bg-white transition-colors"
+                          title="Comments"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          {commentCount > 0 ? commentCount : "Note"}
+                        </button>
                       </div>
                     </div>
+
                     {obl.reasonCode && (
                       <p className="text-[10px] text-gray-500 italic">{obl.reasonCode}</p>
                     )}
+
                     <div className="grid grid-cols-3 gap-2 text-[10px]">
                       <div>
                         <p className="text-gray-400 font-semibold uppercase tracking-wide mb-1">Policies</p>
@@ -1226,6 +1418,7 @@ function DecisionRecord({
                           : <p className="text-red-500">None linked</p>}
                       </div>
                     </div>
+
                     <div className="flex items-center gap-2">
                       <button className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-indigo-600 border border-gray-200 px-2 py-1 rounded bg-white">
                         <Plus className="w-3 h-3" /> Add evidence
@@ -1239,9 +1432,70 @@ function DecisionRecord({
                         </button>
                       )}
                     </div>
+
+                    {/* Inline comment thread */}
+                    {commentOpen && (
+                      <div className="border-t border-gray-200 pt-2.5 space-y-2">
+                        {obl.comments.map((comment) => (
+                          <div key={comment.id} className="bg-white rounded-md p-2 border border-gray-100">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="text-[10px] font-semibold text-gray-700">{comment.actor}</span>
+                              <span className="text-[10px] text-gray-300">·</span>
+                              <span className="text-[10px] text-gray-400">
+                                {new Date(comment.timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-gray-600 leading-relaxed">{comment.text}</p>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={commentDraft}
+                            onChange={(e) => setCommentDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleSendComment(obl.id); }}
+                            placeholder="Add a note…"
+                            className="flex-1 px-2 py-1.5 text-[10px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                          />
+                          <button
+                            onClick={() => handleSendComment(obl.id)}
+                            disabled={!commentDraft.trim()}
+                            className="px-2.5 py-1.5 text-[10px] bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 font-medium"
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
+            </div>
+
+            {/* Inline AI chat — Obligations section */}
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-[10px] font-semibold text-indigo-600 mb-1.5">Ask AI</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["What is not covered?", "What evidence supports this?"].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setObligationsChat(obligationsChat === prompt ? null : prompt)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition-colors ${
+                      obligationsChat === prompt
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                    }`}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+              {obligationsChat && (
+                <div className="mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <p className="text-[10px] font-semibold text-blue-700 mb-1">{obligationsChat}</p>
+                  <p className="text-xs text-gray-700 leading-relaxed">{CONTEXTUAL_CHAT_RESPONSES[obligationsChat]}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1278,35 +1532,9 @@ function DecisionRecord({
           </div>
         </div>
 
-        {/* Right panel */}
+        {/* Right panel — no contextual assistant */}
         <div className="w-64 flex-shrink-0 border-l border-gray-200 overflow-y-auto p-4 space-y-4 bg-white">
-          {/* Contextual assistant */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Contextual assistant</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {CHAT_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setChatPrompt(chatPrompt === p ? null : p)}
-                  className={`px-2 py-1 rounded-full text-[10px] font-medium border transition-colors ${
-                    chatPrompt === p
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "border-gray-200 text-gray-600 hover:border-indigo-300"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            {chatPrompt && (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                <p className="text-[10px] font-semibold text-blue-700 mb-1.5">{chatPrompt}</p>
-                <p className="text-xs text-gray-700 leading-relaxed">{CONTEXTUAL_CHAT_RESPONSES[chatPrompt]}</p>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-gray-100 pt-4 space-y-2.5">
+          <div className="space-y-2.5">
             <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Governance checklist</h3>
             {checklistItems.map(({ label, done }) => (
               <div key={label} className="flex items-center gap-2">
@@ -1324,7 +1552,8 @@ function DecisionRecord({
               { label: "Regulator", value: reg.regulator },
               { label: "Jurisdiction", value: reg.jurisdiction },
               { label: "Type", value: reg.type },
-              { label: "Assignee", value: reg.assignee },
+              { label: "Stage", value: reg.workflow.currentStage },
+              { label: "With", value: reg.workflow.currentAssignee },
             ].map(({ label, value }) => (
               <div key={label} className="flex justify-between items-start gap-2">
                 <span className="text-[10px] text-gray-400 uppercase tracking-wide flex-shrink-0">{label}</span>
@@ -1332,6 +1561,24 @@ function DecisionRecord({
               </div>
             ))}
           </div>
+
+          {reg.workflow.history.length > 0 && (
+            <div className="border-t border-gray-100 pt-4 space-y-2">
+              <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Stage history</h3>
+              <div className="space-y-2">
+                {reg.workflow.history.map((h, i) => (
+                  <div key={i} className="text-[10px]">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                      <span className="font-semibold text-gray-700">{h.stage}</span>
+                    </div>
+                    <p className="text-gray-400 pl-4">{h.assignee} · {new Date(h.completedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
+                    {h.note && <p className="text-gray-400 italic pl-4 mt-0.5 leading-relaxed">"{h.note}"</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1340,67 +1587,244 @@ function DecisionRecord({
 
 // ─── Actions View ─────────────────────────────────────────────────────────────
 
-function ActionsView({ actions }: { actions: DownstreamAction[] }) {
+const STAGE_DESCRIPTIONS: Record<AssignmentStage, string> = {
+  Applicability: "Assess applicability and decide scope",
+  Obligations: "Map and review obligations coverage",
+  "Controls & Evidence": "Link controls and evidence to obligations",
+  Approval: "Review and approve the decision record",
+};
+
+function ActionsView({
+  actions,
+  regulations,
+  onOpenRecord,
+}: {
+  actions: DownstreamAction[];
+  regulations: RegulationMapping[];
+  onOpenRecord: (id: string) => void;
+}) {
+  const [actionsTab, setActionsTab] = useState<"mine" | "team" | "remediation">("mine");
+
+  const myRegs = regulations.filter((r) => r.workflow.currentAssignee === "Maya Patel");
+  const remediationActions = actions.filter((a) => a.stageType === "Remediation");
+
   return (
-    <div className="p-6 overflow-y-auto h-full">
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold text-gray-900">
-          Downstream Actions
-          <span className="ml-2 text-xs font-normal text-gray-400">{actions.length} total</span>
-        </h2>
+    <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="bg-white border-b border-gray-200 px-5 flex items-center gap-0 flex-shrink-0">
+        {[
+          { id: "mine" as const, label: "My Tasks", count: myRegs.length },
+          { id: "team" as const, label: "Team", count: regulations.length },
+          { id: "remediation" as const, label: "Remediation", count: remediationActions.length },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActionsTab(tab.id)}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+              actionsTab === tab.id
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {tab.label}
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+              actionsTab === tab.id ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"
+            }`}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
       </div>
 
-      {actions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-center">
-          <Zap className="w-10 h-10 text-gray-200 mb-3" />
-          <p className="text-sm font-medium text-gray-500">No downstream actions created yet.</p>
-          <p className="text-xs text-gray-400 mt-1 max-w-xs">
-            Create one from an uncovered obligation in a Decision Record.
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                {["Action", "Source regulation", "Obligation", "Owner", "Destination", "Priority", "Status"].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {actions.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 max-w-[200px]">
-                    <p className="text-xs font-medium text-gray-900 leading-snug">{a.title}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Due {a.dueDate}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px]">
-                    <span className="truncate block">{a.sourceRegulation}</span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px]">
-                    <span className="truncate block">{a.sourceObligation}</span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">{a.owner}</td>
-                  <td className="px-4 py-3">
-                    <Badge className="bg-purple-100 text-purple-700 border border-purple-200">{a.destination}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge className={riskBadge(a.priority)}>{a.priority}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge className={a.status === "Pushed downstream" ? "bg-green-100 text-green-700 border border-green-200" : "bg-blue-100 text-blue-700 border border-blue-200"}>
-                      {a.status}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="flex-1 overflow-y-auto p-5">
+
+        {/* My Tasks */}
+        {actionsTab === "mine" && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-sm font-semibold text-gray-900">
+                My Tasks
+                <span className="ml-2 text-xs font-normal text-gray-400">{myRegs.length} regulations currently assigned to you</span>
+              </h2>
+            </div>
+            {myRegs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-center">
+                <CheckCircle2 className="w-10 h-10 text-green-200 mb-3" />
+                <p className="text-sm font-medium text-gray-500">No tasks assigned to you right now.</p>
+                <p className="text-xs text-gray-400 mt-1">Check the Team tab to see the full pipeline.</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      {["Regulation", "Stage", "What's needed", "Decision state", ""].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {myRegs.map((reg) => (
+                      <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <p className="text-xs font-medium text-gray-900">{reg.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                            {reg.workflow.currentStage}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600 max-w-[200px]">
+                          {STAGE_DESCRIPTIONS[reg.workflow.currentStage]}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge className={decisionBadge(reg.decisionState)}>{reg.decisionState}</Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => onOpenRecord(reg.id)}
+                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
+                          >
+                            Open record <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Team */}
+        {actionsTab === "team" && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-sm font-semibold text-gray-900">
+                Team Pipeline
+                <span className="ml-2 text-xs font-normal text-gray-400">{regulations.length} regulations in review</span>
+              </h2>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    {["Regulation", "Stage", "Assigned to", "Handed off by", "Last activity", ""].map((h) => (
+                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {regulations.map((reg) => {
+                    const lastHistory = reg.workflow.history[reg.workflow.history.length - 1];
+                    const isApproved = reg.decisionState === "Approved";
+                    return (
+                      <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <p className="text-xs font-medium text-gray-900">{reg.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                            isApproved
+                              ? "bg-green-50 text-green-700 border-green-200"
+                              : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                          }`}>
+                            {isApproved ? "Approved" : reg.workflow.currentStage}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-700">{reg.workflow.currentAssignee}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {lastHistory ? lastHistory.assignee : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-400">
+                          {lastHistory
+                            ? new Date(lastHistory.completedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => onOpenRecord(reg.id)}
+                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
+                          >
+                            Open <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Remediation */}
+        {actionsTab === "remediation" && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-sm font-semibold text-gray-900">
+                Remediation Actions
+                <span className="ml-2 text-xs font-normal text-gray-400">{remediationActions.length} total</span>
+              </h2>
+            </div>
+            {remediationActions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center">
+                <Zap className="w-10 h-10 text-gray-200 mb-3" />
+                <p className="text-sm font-medium text-gray-500">No remediation actions yet.</p>
+                <p className="text-xs text-gray-400 mt-1 max-w-xs">
+                  Create one from an uncovered obligation in a Decision Record.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      {["Action", "Source regulation", "Owner", "Destination", "Priority", "Status"].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {remediationActions.map((a) => (
+                      <tr key={a.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <p className="text-xs font-medium text-gray-900 leading-snug">{a.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">Due {a.dueDate}</p>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px]">
+                          <span className="truncate block">{a.sourceRegulation}</span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-700">{a.owner}</td>
+                        <td className="px-4 py-3">
+                          <Badge className="bg-purple-100 text-purple-700 border border-purple-200">{a.destination}</Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge className={riskBadge(a.priority)}>{a.priority}</Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge className={a.status === "Pushed downstream" ? "bg-green-100 text-green-700 border border-green-200" : "bg-blue-100 text-blue-700 border border-blue-200"}>
+                            {a.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1533,7 +1957,13 @@ export default function App() {
             />
           ) : null}
 
-          {activeView === "actions" && <ActionsView actions={actions} />}
+          {activeView === "actions" && (
+            <ActionsView
+              actions={actions}
+              regulations={regulations}
+              onOpenRecord={handleOpenRecord}
+            />
+          )}
           {activeView === "statements" && <Placeholder title="Policy Statements" icon={AlignLeft} />}
         </main>
       </div>
