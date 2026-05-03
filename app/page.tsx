@@ -3,16 +3,10 @@
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
-  List,
-  Building2,
-  Radar,
   BookOpen,
-  Search,
-  Tag,
-  Shield,
-  ScrollText,
   AlignLeft,
-  Settings,
+  Building2,
+  Search,
   ChevronDown,
   ChevronRight,
   X,
@@ -23,7 +17,6 @@ import {
   ExternalLink,
   Plus,
   Edit3,
-  Save,
   RotateCcw,
   ArrowRight,
   FileCheck,
@@ -116,42 +109,17 @@ function CoverageBar({ value }: { value: number }) {
 
 type View =
   | "dashboard"
-  | "mylist"
-  | "overview"
-  | "horizon"
   | "mapping"
-  | "regsearch"
   | "records"
   | "actions"
-  | "tags"
-  | "controls"
-  | "policies"
-  | "statements"
-  | "settings";
+  | "statements";
 
 const NAV = [
   {
     items: [
       { id: "dashboard" as View, label: "Dashboard", icon: LayoutDashboard },
-      { id: "mylist" as View, label: "My list", icon: List },
-      { id: "overview" as View, label: "Company Overview", icon: Building2 },
-    ],
-  },
-  {
-    section: "Tools",
-    items: [
-      { id: "horizon" as View, label: "Horizon Scanning", icon: Radar },
       { id: "mapping" as View, label: "Regulations Mapping", icon: BookOpen },
-      { id: "regsearch" as View, label: "Regulation Search", icon: Search },
       { id: "actions" as View, label: "Actions", icon: Zap },
-    ],
-  },
-  {
-    section: "Library",
-    items: [
-      { id: "tags" as View, label: "Risk Tags", icon: Tag },
-      { id: "controls" as View, label: "Controls", icon: Shield },
-      { id: "policies" as View, label: "Policies", icon: ScrollText },
       { id: "statements" as View, label: "Policy Statements", icon: AlignLeft },
     ],
   },
@@ -170,28 +138,19 @@ function Sidebar({ active, setActive }: { active: View; setActive: (v: View) => 
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-2 overflow-y-auto">
-        {NAV.map((group, gi) => (
-          <div key={gi} className="mb-3">
-            {group.section && (
-              <p className="px-2 mb-1 text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
-                {group.section}
-              </p>
-            )}
-            {group.items.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setActive(id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors text-left mb-0.5 ${
-                  active === id
-                    ? "bg-white/10 text-white font-medium"
-                    : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
-                }`}
-              >
-                <Icon className={`w-4 h-4 flex-shrink-0 ${active === id ? "text-white" : "text-gray-500"}`} />
-                {label}
-              </button>
-            ))}
-          </div>
+        {NAV[0].items.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActive(id)}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors text-left mb-0.5 ${
+              active === id
+                ? "bg-white/10 text-white font-medium"
+                : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+            }`}
+          >
+            <Icon className={`w-4 h-4 flex-shrink-0 ${active === id ? "text-white" : "text-gray-500"}`} />
+            {label}
+          </button>
         ))}
       </nav>
 
@@ -1515,15 +1474,7 @@ export default function App() {
           ) : null}
 
           {activeView === "actions" && <ActionsView actions={actions} />}
-          {activeView === "mylist" && <Placeholder title="My List" icon={List} />}
-          {activeView === "overview" && <Placeholder title="Company Overview" icon={Building2} />}
-          {activeView === "horizon" && <Placeholder title="Horizon Scanning" icon={Radar} />}
-          {activeView === "regsearch" && <Placeholder title="Regulation Search" icon={Search} />}
-          {activeView === "tags" && <Placeholder title="Risk Tags" icon={Tag} />}
-          {activeView === "controls" && <Placeholder title="Controls Library" icon={Shield} />}
-          {activeView === "policies" && <Placeholder title="Policies Library" icon={ScrollText} />}
           {activeView === "statements" && <Placeholder title="Policy Statements" icon={AlignLeft} />}
-          {activeView === "settings" && <Placeholder title="Settings" icon={Settings} />}
         </main>
       </div>
 
