@@ -247,64 +247,112 @@ function Dashboard({ regulations, onOpenRecord, onFilteredMapping, viewScope }: 
         </div>
       </div>
 
-      {/* Actions & hand-offs + Team workload */}
+      {/* Bottom section — layout shifts by scope */}
       <div className="grid grid-cols-3 gap-4 items-start">
 
-        {/* Actions & hand-offs */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Actions & hand-offs</h3>
-              <p className="text-[10px] text-gray-400 mt-0.5">{queueLabel}</p>
+        {viewScope === "my" ? (
+          /* ── My queue (personal to-do, no Owner column) ── */
+          <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900">My queue</h3>
+              <p className="text-[10px] text-gray-400 mt-0.5">{queue.length} regulation{queue.length !== 1 ? "s" : ""} assigned to you — here is what needs doing</p>
             </div>
-            <div className="flex gap-1.5">
-              {viewScope === "my" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 font-medium">My queue</span>}
-              {viewScope === "team" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 font-medium">Team view</span>}
-              {viewScope === "all" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-medium">Full portfolio</span>}
-            </div>
+            {queue.length === 0 ? (
+              <div className="py-10 text-center"><CheckCircle2 className="w-7 h-7 text-green-200 mx-auto mb-2" /><p className="text-sm text-gray-400">Nothing assigned to you right now.</p></div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    {["Regulation", "Stage", "Due", "What's needed", ""].map((h) => (
+                      <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {queue.map((reg) => {
+                    const blockerText = getBlocker(reg);
+                    const { label: actionLabel, cls: actionCls } = getNextAction(reg);
+                    const isBlocked = blockerText !== "—" && blockerText !== "Awaiting approval";
+                    return (
+                      <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-3 max-w-[200px]">
+                          <p className="text-xs font-medium text-gray-900 leading-snug">{reg.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">{reg.workflow.currentStage}</span>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{DUE_DATES[reg.id] ?? "—"}</td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {isBlocked
+                            ? <span className="flex items-center gap-1 text-[10px] text-amber-700 font-medium"><AlertTriangle className="w-3 h-3 flex-shrink-0" />{blockerText}</span>
+                            : <span className="text-[10px] text-gray-400">{blockerText}</span>}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <button onClick={() => onOpenRecord(reg.id)} className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors ${actionCls}`}>{actionLabel}</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-          {queue.length === 0 ? (
-            <div className="py-10 text-center"><CheckCircle2 className="w-7 h-7 text-green-200 mx-auto mb-2" /><p className="text-sm text-gray-400">Nothing assigned to you right now.</p></div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  {["Source", "Stage", "Owner", "Due", "Blocker", ""].map((h) => (
-                    <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {queue.map((reg) => {
-                  const blockerText = getBlocker(reg);
-                  const { label: actionLabel, cls: actionCls } = getNextAction(reg);
-                  const isBlocked = blockerText !== "—" && blockerText !== "Awaiting approval";
-                  return (
-                    <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-3 py-3 max-w-[180px]">
-                        <p className="text-xs font-medium text-gray-900 leading-snug truncate">{reg.title}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">{reg.workflow.currentStage}</span>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap">{reg.workflow.currentAssignee}</td>
-                      <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{DUE_DATES[reg.id] ?? "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        {isBlocked
-                          ? <span className="flex items-center gap-1 text-[10px] text-amber-700 font-medium"><AlertTriangle className="w-3 h-3 flex-shrink-0" />{blockerText}</span>
-                          : <span className="text-[10px] text-gray-400">{blockerText}</span>}
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <button onClick={() => onOpenRecord(reg.id)} className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors ${actionCls}`}>{actionLabel}</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+        ) : (
+          /* ── Actions & hand-offs (team routing view) ── */
+          <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Actions & hand-offs</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">{queueLabel}</p>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border border-purple-100 bg-purple-50 text-purple-600">
+                {viewScope === "team" ? "Team view" : "Full portfolio"}
+              </span>
+            </div>
+            {queue.length === 0 ? (
+              <div className="py-10 text-center"><CheckCircle2 className="w-7 h-7 text-green-200 mx-auto mb-2" /><p className="text-sm text-gray-400">No open items.</p></div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    {["Source", "Stage", "Owner", "Due", "Blocker", ""].map((h) => (
+                      <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {queue.map((reg) => {
+                    const blockerText = getBlocker(reg);
+                    const { label: actionLabel, cls: actionCls } = getNextAction(reg);
+                    const isBlocked = blockerText !== "—" && blockerText !== "Awaiting approval";
+                    return (
+                      <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-3 max-w-[180px]">
+                          <p className="text-xs font-medium text-gray-900 leading-snug truncate">{reg.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">{reg.workflow.currentStage}</span>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap">{reg.workflow.currentAssignee}</td>
+                        <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{DUE_DATES[reg.id] ?? "—"}</td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {isBlocked
+                            ? <span className="flex items-center gap-1 text-[10px] text-amber-700 font-medium"><AlertTriangle className="w-3 h-3 flex-shrink-0" />{blockerText}</span>
+                            : <span className="text-[10px] text-gray-400">{blockerText}</span>}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <button onClick={() => onOpenRecord(reg.id)} className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors ${actionCls}`}>{actionLabel}</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         {/* Team workload */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
