@@ -123,12 +123,13 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
 
 // ─── KPI Cards ───────────────────────────────────────────────────────────────
 
-function KpiCard({ label, value, sub, onClick, accent }: { label: string; value: string | number; sub?: string; onClick?: () => void; accent?: string }) {
+function KpiCard({ label, value, sub, onClick, accent, action }: { label: string; value: string | number; sub?: string; onClick?: () => void; accent?: string; action?: string }) {
   return (
-    <button onClick={onClick} className="bg-white border border-gray-200 rounded-lg p-5 text-left hover:border-indigo-300 hover:shadow-sm transition-all group flex-1 min-w-0">
+    <button onClick={onClick} className="bg-white border border-gray-200 rounded-lg p-4 text-left hover:border-indigo-300 hover:shadow-sm transition-all group flex-1 min-w-0">
       <p className="text-xs text-gray-500 font-medium">{label}</p>
       <p className={`text-3xl font-bold mt-1 ${accent || "text-gray-900"} group-hover:text-indigo-700 transition-colors`}>{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      {action && <p className="text-[10px] text-indigo-500 mt-2 font-medium group-hover:underline">{action} →</p>}
     </button>
   );
 }
@@ -145,96 +146,196 @@ function RegKpiCard({ label, value, sub, accent }: { label: string; value: strin
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
-const SCOPE_METRICS: Record<ViewScope, { mapped: number; applicablePct: number; applicableOf: number; approvedPct: number; approvedCount: number; policyPct: number; policyOf: number; controlPct: number; controlOf: number; openGaps: number; unreviewed: number; decisionCounts: Record<string, number>; gapBreakdown: { label: string; count: number; color: string }[] }> = {
-  my: { mapped: 7, applicablePct: 71, applicableOf: 5, approvedPct: 29, approvedCount: 2, policyPct: 38, policyOf: 2, controlPct: 52, controlOf: 3, openGaps: 7, unreviewed: 3, decisionCounts: { Draft: 3, Reviewed: 2, Approved: 2, Superseded: 0 }, gapBreakdown: [{ label: "Policy gap", count: 3, color: "bg-red-400" }, { label: "Control gap", count: 2, color: "bg-amber-400" }, { label: "Evidence missing", count: 3, color: "bg-orange-400" }, { label: "Not assessed", count: 3, color: "bg-gray-300" }] },
-  team: { mapped: 42, applicablePct: 64, applicableOf: 27, approvedPct: 45, approvedCount: 19, policyPct: 51, policyOf: 14, controlPct: 63, controlOf: 17, openGaps: 23, unreviewed: 11, decisionCounts: { Draft: 11, Reviewed: 12, Approved: 19, Superseded: 0 }, gapBreakdown: [{ label: "Policy gap", count: 9, color: "bg-red-400" }, { label: "Control gap", count: 7, color: "bg-amber-400" }, { label: "Evidence missing", count: 10, color: "bg-orange-400" }, { label: "Not assessed", count: 8, color: "bg-gray-300" }] },
-  all: { mapped: 355, applicablePct: 62, applicableOf: 220, approvedPct: 41, approvedCount: 146, policyPct: 38, policyOf: 84, controlPct: 27, controlOf: 59, openGaps: 48, unreviewed: 23, decisionCounts: { Draft: 23, Reviewed: 186, Approved: 146, Superseded: 0 }, gapBreakdown: [{ label: "Policy gap", count: 18, color: "bg-red-400" }, { label: "Control gap", count: 14, color: "bg-amber-400" }, { label: "Evidence missing", count: 21, color: "bg-orange-400" }, { label: "Not assessed", count: 12, color: "bg-gray-300" }] },
+const SCOPE_METRICS: Record<ViewScope, { mapped: number; applicablePct: number; applicableOf: number; approvedPct: number; approvedCount: number; policyPct: number; policyOf: number; controlPct: number; controlOf: number; openGaps: number; unreviewed: number }> = {
+  my:   { mapped: 7,   applicablePct: 71, applicableOf: 5,   approvedPct: 29, approvedCount: 2,   policyPct: 38, policyOf: 2,  controlPct: 52, controlOf: 3,  openGaps: 7,  unreviewed: 3  },
+  team: { mapped: 42,  applicablePct: 64, applicableOf: 27,  approvedPct: 45, approvedCount: 19,  policyPct: 51, policyOf: 14, controlPct: 63, controlOf: 17, openGaps: 23, unreviewed: 11 },
+  all:  { mapped: 355, applicablePct: 62, applicableOf: 220, approvedPct: 41, approvedCount: 146, policyPct: 38, policyOf: 84, controlPct: 27, controlOf: 59, openGaps: 48, unreviewed: 23 },
+};
+
+const DUE_DATES: Record<string, string> = {
+  "reg-001": "31 May", "reg-002": "24 May", "reg-003": "17 May",
+  "reg-004": "3 May",  "reg-005": "17 May", "reg-006": "3 May", "reg-007": "24 May",
 };
 
 function Dashboard({ regulations, onOpenRecord, onFilteredMapping, viewScope }: { regulations: RegulationMapping[]; onOpenRecord: (id: string) => void; onFilteredMapping: (f: string) => void; viewScope: ViewScope }) {
   const m = SCOPE_METRICS[viewScope];
-  const workQueue = regulations.filter((r) => r.workflow.currentAssignee === "Maya Patel");
+
+  // Lifecycle funnel — computed from real workflow data
+  const funnelStages = [
+    { label: "Mapped",        count: regulations.length },
+    { label: "Applicability", count: regulations.filter((r) => r.workflow.history.some((h) => h.stage === "Applicability")).length },
+    { label: "Obligations",   count: regulations.filter((r) => r.workflow.history.some((h) => h.stage === "Obligations")).length },
+    { label: "Controls",      count: regulations.filter((r) => r.workflow.history.some((h) => h.stage === "Controls & Evidence")).length },
+    { label: "Approved",      count: regulations.filter((r) => r.decisionState === "Approved").length },
+  ];
+
+  // Actions & hand-offs queue — gated by view scope
+  const queue =
+    viewScope === "my"   ? regulations.filter((r) => r.workflow.currentAssignee === "Maya Patel") :
+    viewScope === "team" ? regulations.filter((r) => r.decisionState !== "Approved") :
+    regulations;
+
+  const queueLabel =
+    viewScope === "my"   ? `${queue.length} regulation${queue.length !== 1 ? "s" : ""} assigned to you` :
+    viewScope === "team" ? `${queue.length} regulations in progress across your team` :
+    `${regulations.length} total · ${regulations.filter((r) => r.decisionState === "Approved").length} approved`;
+
+  const getBlocker = (reg: RegulationMapping) => {
+    const notAssessed = reg.obligations.filter((o) => o.coverageStatus === "Not assessed").length;
+    const uncovered   = reg.obligations.filter((o) => o.coverageStatus === "Not covered").length;
+    const partial     = reg.obligations.filter((o) => o.coverageStatus === "Partial").length;
+    const noControls  = reg.obligations.filter((o) => o.linkedControls.length === 0 && o.coverageStatus !== "Not assessed").length;
+    if (notAssessed > 0) return `${notAssessed} not assessed`;
+    if (uncovered   > 0) return `${uncovered} uncovered`;
+    if (partial     > 0) return `${partial} partial`;
+    if (noControls  > 0) return `${noControls} no control linked`;
+    if (reg.decisionState === "Draft") return "Rationale missing";
+    if (reg.decisionState === "Reviewed") return "Awaiting approval";
+    return "—";
+  };
+
+  const getNextAction = (reg: RegulationMapping): { label: string; cls: string } => {
+    const s = reg.workflow.currentStage;
+    if (s === "Applicability")      return { label: "Assign reviewer",  cls: "border border-indigo-200 text-indigo-600 hover:bg-indigo-50" };
+    if (s === "Obligations")        return { label: "Create hand-off",  cls: "bg-indigo-600 text-white hover:bg-indigo-700" };
+    if (s === "Controls & Evidence") return { label: "Request evidence", cls: "border border-amber-200 text-amber-700 hover:bg-amber-50" };
+    if (s === "Approval")           return { label: "Approve",          cls: "border border-green-200 text-green-700 hover:bg-green-50" };
+    return { label: "Open record", cls: "border border-gray-200 text-gray-600 hover:bg-gray-50" };
+  };
+
+  // Team workload from real assignee data
+  const teamWorkload = ["Maya Patel", "Alex Chen", "Samir Khan", "Sarah Okonkwo"].map((name) => ({
+    name,
+    open: regulations.filter((r) => r.workflow.currentAssignee === name && r.decisionState !== "Approved").length,
+    stage: regulations.find((r) => r.workflow.currentAssignee === name && r.decisionState !== "Approved")?.workflow.currentStage ?? "—",
+  }));
+
   return (
-    <div className="overflow-y-auto h-full p-5 space-y-5">
+    <div className="overflow-y-auto h-full p-5 space-y-4">
+
+      {/* KPI cards */}
       <div className="flex gap-3">
-        <KpiCard label="Applicable" value={`${m.applicablePct}%`} sub={`${m.applicableOf} of ${m.mapped} items`} onClick={() => onFilteredMapping("all")} />
-        <KpiCard label="Control Coverage" value={`${m.controlPct}%`} sub={`${m.controlOf} of ${m.applicableOf} applicable`} accent={m.controlPct < 50 ? "text-red-600" : "text-gray-900"} onClick={() => onFilteredMapping("control-gap")} />
-        <KpiCard label="Policy Coverage" value={`${m.policyPct}%`} sub={`${m.policyOf} of ${m.applicableOf} applicable`} accent={m.policyPct < 50 ? "text-red-600" : "text-gray-900"} onClick={() => onFilteredMapping("policy-gap")} />
-        <KpiCard label="Approved Decisions" value={`${m.approvedPct}%`} sub={`${m.approvedCount} of ${m.mapped} mapped`} accent="text-green-700" onClick={() => onFilteredMapping("approved")} />
-        <KpiCard label="Open Coverage Gaps" value={m.openGaps} sub="obligations needing action" accent="text-red-600" onClick={() => onFilteredMapping("uncovered")} />
-        <KpiCard label="Unreviewed" value={m.unreviewed} sub="in Draft state" accent={m.unreviewed > 0 ? "text-amber-600" : "text-green-600"} onClick={() => onFilteredMapping("draft")} />
+        <KpiCard label="Applicable"        value={`${m.applicablePct}%`} sub={`${m.applicableOf} of ${m.mapped} regulations`}      action="View all regulations"  onClick={() => onFilteredMapping("all")} />
+        <KpiCard label="Policy Coverage"   value={`${m.policyPct}%`}    sub={`${m.policyOf} of ${m.applicableOf} applicable`}       action="View policy gaps"      accent={m.policyPct < 50 ? "text-red-600" : "text-gray-900"} onClick={() => onFilteredMapping("policy-gap")} />
+        <KpiCard label="Control Coverage"  value={`${m.controlPct}%`}   sub={`${m.controlOf} of ${m.applicableOf} applicable`}      action="View control gaps"     accent={m.controlPct < 50 ? "text-red-600" : "text-gray-900"} onClick={() => onFilteredMapping("control-gap")} />
+        <KpiCard label="Approved"          value={`${m.approvedPct}%`}  sub={`${m.approvedCount} of ${m.mapped} mapped`}            action="View approved records" accent="text-green-700" onClick={() => onFilteredMapping("approved")} />
+        <KpiCard label="Open Gaps"         value={m.openGaps}           sub="obligations needing action"                             action="Create hand-offs"      accent="text-red-600"  onClick={() => onFilteredMapping("uncovered")} />
+        <KpiCard label="Unreviewed"        value={m.unreviewed}         sub="in Draft state"                                         action="Assign reviewers"      accent={m.unreviewed > 0 ? "text-amber-600" : "text-green-600"} onClick={() => onFilteredMapping("draft")} />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-indigo-500" />Decision lifecycle</h3>
-          <div className="space-y-3">
-            {Object.entries(m.decisionCounts).map(([state, count]) => {
-              const bar = state === "Approved" ? "bg-green-500" : state === "Reviewed" ? "bg-blue-500" : state === "Draft" ? "bg-gray-300" : "bg-purple-400";
-              const max = Math.max(...Object.values(m.decisionCounts), 1);
-              return (
-                <div key={state} className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500 w-20 flex-shrink-0">{state}</span>
-                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full ${bar} rounded-full transition-all duration-500`} style={{ width: `${(count / max) * 100}%` }} /></div>
-                  <span className="text-xs font-semibold text-gray-700 w-8 text-right">{count}</span>
+
+      {/* Lifecycle funnel */}
+      <div className="bg-white border border-gray-200 rounded-lg px-5 py-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Regulation lifecycle — where is work stuck?</p>
+        <div className="flex items-stretch gap-0">
+          {funnelStages.map((stage, i) => {
+            const pct = funnelStages[0].count > 0 ? (stage.count / funnelStages[0].count) * 100 : 0;
+            const isLast = i === funnelStages.length - 1;
+            const isApproved = stage.label === "Approved";
+            return (
+              <React.Fragment key={stage.label}>
+                <div className="flex-1 flex flex-col items-center gap-1.5">
+                  <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-700 ${isApproved ? "bg-green-500" : "bg-indigo-400"}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className={`text-2xl font-bold ${isApproved ? "text-green-700" : "text-gray-900"}`}>{stage.count}</span>
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wide text-center leading-tight">{stage.label}</span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-amber-500" />Gap breakdown</h3>
-          <div className="space-y-3">
-            {m.gapBreakdown.map(({ label, count, color }) => {
-              const max = Math.max(...m.gapBreakdown.map((g) => g.count), 1);
-              return (
-                <div key={label} className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500 w-28 flex-shrink-0">{label}</span>
-                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${(count / max) * 100}%` }} /></div>
-                  <span className="text-xs font-semibold text-gray-700 w-8 text-right">{count}</span>
-                </div>
-              );
-            })}
-          </div>
+                {!isLast && <div className="flex items-center px-2 pb-4"><ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" /></div>}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
-      <div className="bg-white border border-gray-200 rounded-lg">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">Work queue</h3>
-          <span className="text-xs text-gray-400">{workQueue.length} items assigned to you</span>
-        </div>
-        {workQueue.length === 0 ? (
-          <div className="py-12 text-center"><CheckCircle2 className="w-8 h-8 text-green-200 mx-auto mb-2" /><p className="text-sm text-gray-400">No items currently assigned to you.</p></div>
-        ) : (
-          <div className="overflow-x-auto">
+
+      {/* Actions & hand-offs + Team workload */}
+      <div className="grid grid-cols-3 gap-4 items-start">
+
+        {/* Actions & hand-offs */}
+        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Actions & hand-offs</h3>
+              <p className="text-[10px] text-gray-400 mt-0.5">{queueLabel}</p>
+            </div>
+            <div className="flex gap-1.5">
+              {viewScope === "my" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 font-medium">My queue</span>}
+              {viewScope === "team" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 font-medium">Team view</span>}
+              {viewScope === "all" && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-medium">Full portfolio</span>}
+            </div>
+          </div>
+          {queue.length === 0 ? (
+            <div className="py-10 text-center"><CheckCircle2 className="w-7 h-7 text-green-200 mx-auto mb-2" /><p className="text-sm text-gray-400">Nothing assigned to you right now.</p></div>
+          ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {["Regulation", "Stage", "Decision state", "Coverage issue", "Next step", ""].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  {["Source", "Stage", "Owner", "Due", "Blocker", ""].map((h) => (
+                    <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {workQueue.map((reg) => {
-                  const notAssessed = reg.obligations.filter((o) => o.coverageStatus === "Not assessed").length;
-                  const uncovered = reg.obligations.filter((o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial").length;
-                  const issue = notAssessed > 0 ? `${notAssessed} not assessed` : uncovered > 0 ? `${uncovered} uncovered` : reg.policyCoverage < 50 ? "Policy gap" : "Incomplete rationale";
-                  const next = reg.workflow.currentStage === "Applicability" ? "Assess applicability" : reg.workflow.currentStage === "Obligations" ? "Review obligations" : reg.workflow.currentStage === "Controls & Evidence" ? "Map controls & evidence" : "Approve decision";
+                {queue.map((reg) => {
+                  const blockerText = getBlocker(reg);
+                  const { label: actionLabel, cls: actionCls } = getNextAction(reg);
+                  const isBlocked = blockerText !== "—" && blockerText !== "Awaiting approval";
                   return (
                     <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-xs font-medium text-gray-900 max-w-[180px]">{reg.title}</td>
-                      <td className="px-4 py-3"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">{reg.workflow.currentStage}</span></td>
-                      <td className="px-4 py-3"><Badge className={decisionBadge(reg.decisionState)}>{reg.decisionState}</Badge></td>
-                      <td className="px-4 py-3 text-xs text-gray-600">{issue}</td>
-                      <td className="px-4 py-3 text-xs text-amber-700 font-medium">{next}</td>
-                      <td className="px-4 py-3"><button onClick={() => onOpenRecord(reg.id)} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap">Open record <ChevronRight className="w-3 h-3" /></button></td>
+                      <td className="px-3 py-3 max-w-[180px]">
+                        <p className="text-xs font-medium text-gray-900 leading-snug truncate">{reg.title}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">{reg.workflow.currentStage}</span>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap">{reg.workflow.currentAssignee}</td>
+                      <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">{DUE_DATES[reg.id] ?? "—"}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        {isBlocked
+                          ? <span className="flex items-center gap-1 text-[10px] text-amber-700 font-medium"><AlertTriangle className="w-3 h-3 flex-shrink-0" />{blockerText}</span>
+                          : <span className="text-[10px] text-gray-400">{blockerText}</span>}
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <button onClick={() => onOpenRecord(reg.id)} className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors ${actionCls}`}>{actionLabel}</button>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+
+        {/* Team workload */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900">Team workload</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Open hand-offs by owner</p>
           </div>
-        )}
+          <div className="divide-y divide-gray-50">
+            {teamWorkload.map(({ name, open, stage }) => {
+              const initials = name.split(" ").map((n) => n[0]).join("");
+              const colors = ["bg-indigo-400", "bg-purple-400", "bg-emerald-400", "bg-amber-400"];
+              const ci = ["Maya Patel", "Alex Chen", "Samir Khan", "Sarah Okonkwo"].indexOf(name) % colors.length;
+              return (
+                <div key={name} className="px-4 py-3 flex items-center gap-3">
+                  <div className={`w-7 h-7 rounded-full ${colors[ci]} flex items-center justify-center flex-shrink-0`}>
+                    <span className="text-white text-[10px] font-bold">{initials}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-800 truncate">{name}</p>
+                    <p className="text-[10px] text-gray-400">{stage}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className={`text-sm font-bold ${open > 0 ? "text-indigo-600" : "text-gray-300"}`}>{open}</span>
+                    <p className="text-[10px] text-gray-400">open</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
       </div>
     </div>
   );
