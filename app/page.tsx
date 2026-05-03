@@ -146,7 +146,7 @@ function Dashboard({ regulations, onOpenRecord, onFilteredMapping, viewScope }: 
   return (
     <div className="overflow-y-auto h-full p-5 space-y-5">
       <div className="flex gap-3">
-        <KpiCard label="Applicable" value={`${m.applicablePct}%`} sub={`${m.applicableOf} of ${m.mapped} items`} onClick={() => onFilteredMapping("applicable")} />
+        <KpiCard label="Applicable" value={`${m.applicablePct}%`} sub={`${m.applicableOf} of ${m.mapped} items`} onClick={() => onFilteredMapping("all")} />
         <KpiCard label="Control Coverage" value={`${m.controlPct}%`} sub={`${m.controlOf} of ${m.applicableOf} applicable`} accent={m.controlPct < 50 ? "text-red-600" : "text-gray-900"} onClick={() => onFilteredMapping("control-gap")} />
         <KpiCard label="Policy Coverage" value={`${m.policyPct}%`} sub={`${m.policyOf} of ${m.applicableOf} applicable`} accent={m.policyPct < 50 ? "text-red-600" : "text-gray-900"} onClick={() => onFilteredMapping("policy-gap")} />
         <KpiCard label="Approved Decisions" value={`${m.approvedPct}%`} sub={`${m.approvedCount} of ${m.mapped} mapped`} accent="text-green-700" onClick={() => onFilteredMapping("approved")} />
@@ -231,20 +231,52 @@ function Dashboard({ regulations, onOpenRecord, onFilteredMapping, viewScope }: 
 
 // ─── Mapping Table ────────────────────────────────────────────────────────────
 
-type MappingFilter = "all" | "incomplete-rationale" | "uncovered" | "draft" | "approved" | "policy-gap" | "control-gap" | "applicable";
+type MappingFilter = "all" | "not-assessed" | "uncovered" | "draft" | "approved" | "policy-gap" | "control-gap";
+
+// Small inline stat cell used in mapping table rows
+function StatCell({ value, total, good }: { value: number; total: number; good?: boolean }) {
+  const isComplete = value === total && total > 0;
+  const isNone = value === 0;
+  const color = good !== false && isComplete ? "text-green-700" : isNone && total > 0 ? "text-red-500" : "text-amber-600";
+  return (
+    <div>
+      <span className={`text-sm font-semibold ${color}`}>{value}</span>
+      <span className="text-[10px] text-gray-400 ml-0.5">/{total}</span>
+    </div>
+  );
+}
+
+function CountCell({ value }: { value: number }) {
+  return <span className={`text-sm font-semibold ${value > 0 ? "text-green-700" : "text-gray-300"}`}>{value}</span>;
+}
 
 function MappingTable({ regulations, onOpenRecord, activeFilter, setActiveFilter }: { regulations: RegulationMapping[]; onOpenRecord: (id: string) => void; activeFilter: MappingFilter; setActiveFilter: (f: MappingFilter) => void }) {
   const [search, setSearch] = useState("");
   const filters: { id: MappingFilter; label: string }[] = [
-    { id: "all", label: "All" }, { id: "incomplete-rationale", label: "Incomplete rationale" },
-    { id: "uncovered", label: "Uncovered obligations" }, { id: "draft", label: "Unreviewed" },
-    { id: "approved", label: "Approved" }, { id: "policy-gap", label: "Policy gap" }, { id: "control-gap", label: "Control gap" },
+    { id: "all", label: "All" },
+    { id: "not-assessed", label: "Not fully assessed" },
+    { id: "uncovered", label: "Uncovered obligations" },
+    { id: "draft", label: "Unreviewed" },
+    { id: "approved", label: "Approved" },
+    { id: "policy-gap", label: "Policy gap" },
+    { id: "control-gap", label: "Control gap" },
   ];
   const filtered = regulations.filter((r) => {
     const s = r.title.toLowerCase().includes(search.toLowerCase());
-    const f = activeFilter === "all" || (activeFilter === "incomplete-rationale" && !r.humanRationale) || (activeFilter === "uncovered" && r.obligations.some((o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial")) || (activeFilter === "draft" && r.decisionState === "Draft") || (activeFilter === "approved" && r.decisionState === "Approved") || (activeFilter === "policy-gap" && r.policyCoverage < 50) || (activeFilter === "control-gap" && r.controlCoverage < 50) || (activeFilter === "applicable" && r.applicability === "Applicable");
+    const assessed = r.obligations.filter((o) => o.coverageStatus !== "Not assessed").length;
+    const uniquePolicies = [...new Set(r.obligations.flatMap((o) => o.linkedPolicies))];
+    const uniqueControls = [...new Set(r.obligations.flatMap((o) => o.linkedControls))];
+    const f =
+      activeFilter === "all" ||
+      (activeFilter === "not-assessed" && assessed < r.obligations.length) ||
+      (activeFilter === "uncovered" && r.obligations.some((o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial")) ||
+      (activeFilter === "draft" && r.decisionState === "Draft") ||
+      (activeFilter === "approved" && r.decisionState === "Approved") ||
+      (activeFilter === "policy-gap" && uniquePolicies.length === 0) ||
+      (activeFilter === "control-gap" && uniqueControls.length === 0);
     return s && f;
   });
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center gap-3 flex-shrink-0">
@@ -270,38 +302,72 @@ function MappingTable({ regulations, onOpenRecord, activeFilter, setActiveFilter
           <thead className="sticky top-0 bg-white z-10 border-b border-gray-200">
             <tr>
               <th className="w-8 px-4 py-3"><input type="checkbox" className="rounded border-gray-300" /></th>
-              {["Regulation", "Applicability", "Inherent Risk", "Type", "Risk Tags", "Controls", "Policies", "Assignee", "Approved", ""].map((h) => (
-                <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">
-                  {h && <span className="flex items-center gap-1">{h}{["Applicability", "Inherent Risk", "Type", "Controls", "Policies", "Assignee", "Approved"].includes(h) && <ChevronDown className="w-3 h-3 text-gray-400" />}</span>}
+              {[
+                { label: "Regulation", sort: false },
+                { label: "Risk", sort: true },
+                { label: "Type", sort: true },
+                { label: "Requirements", sort: false },
+                { label: "Assessed", sort: true },
+                { label: "Covered", sort: true },
+                { label: "Policies", sort: true },
+                { label: "Controls", sort: true },
+                { label: "Stage", sort: true },
+                { label: "Assignee", sort: true },
+                { label: "Status", sort: true },
+                { label: "", sort: false },
+              ].map(({ label, sort }) => (
+                <th key={label} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">
+                  {label && <span className="flex items-center gap-1">{label}{sort && <ChevronDown className="w-3 h-3 text-gray-400" />}</span>}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map((reg) => {
+              const total = reg.obligations.length;
+              const assessed = reg.obligations.filter((o) => o.coverageStatus !== "Not assessed").length;
+              const covered = reg.obligations.filter((o) => o.coverageStatus === "Covered").length;
+              const uniquePolicies = [...new Set(reg.obligations.flatMap((o) => o.linkedPolicies))].length;
+              const uniqueControls = [...new Set(reg.obligations.flatMap((o) => o.linkedControls))].length;
               const hasGap = reg.obligations.some((o) => o.coverageStatus === "Not covered" || o.coverageStatus === "Partial");
+              const notFullyAssessed = assessed < total;
               return (
-                <tr key={reg.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3.5"><input type="checkbox" className="rounded border-gray-300" /></td>
-                  <td className="px-3 py-3.5 max-w-[220px]">
+                <tr key={reg.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => onOpenRecord(reg.id)}>
+                  <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="rounded border-gray-300" /></td>
+                  <td className="px-3 py-3.5 max-w-[240px]">
                     <div className="flex items-start gap-1.5">
-                      {hasGap && <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />}
-                      <div><p className="text-xs font-medium text-gray-900 leading-snug">{reg.title}</p><p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p></div>
+                      {(hasGap || notFullyAssessed) && <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />}
+                      <div>
+                        <p className="text-xs font-medium text-gray-900 leading-snug">{reg.title}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{reg.regulator}</p>
+                      </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3.5"><div className="flex items-center gap-1"><Badge className={applicabilityBadge(reg.applicability)}>{reg.applicability === "Partially applicable" ? "Partial" : reg.applicability}</Badge><Check className="w-3 h-3 text-gray-300" /></div></td>
                   <td className="px-3 py-3.5"><Badge className={riskBadge(reg.risk)}>{reg.risk}</Badge></td>
                   <td className="px-3 py-3.5"><Badge className="bg-purple-100 text-purple-700 border border-purple-300">{reg.type}</Badge></td>
-                  <td className="px-3 py-3.5 text-xs text-gray-400">—</td>
-                  <td className="px-3 py-3.5"><CoverageBar value={reg.controlCoverage} /></td>
-                  <td className="px-3 py-3.5">{reg.policyCoverage < 30 ? <span className="text-xs text-gray-400">Not required</span> : <CoverageBar value={reg.policyCoverage} />}</td>
-                  <td className="px-3 py-3.5 text-xs text-gray-500">{reg.workflow.currentAssignee}</td>
-                  <td className="px-3 py-3.5"><Badge className={reg.decisionState === "Approved" ? applicabilityBadge("Applicable") : "bg-red-50 text-red-500 border border-red-300"}>{reg.decisionState === "Approved" ? "Approved" : "Pending"}</Badge></td>
-                  <td className="px-3 py-3.5"><button onClick={() => onOpenRecord(reg.id)} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap">Open <ChevronRight className="w-3 h-3" /></button></td>
+                  <td className="px-3 py-3.5 text-center">
+                    <span className="text-sm font-semibold text-gray-700">{total}</span>
+                  </td>
+                  <td className="px-3 py-3.5"><StatCell value={assessed} total={total} /></td>
+                  <td className="px-3 py-3.5"><StatCell value={covered} total={assessed} /></td>
+                  <td className="px-3 py-3.5"><CountCell value={uniquePolicies} /></td>
+                  <td className="px-3 py-3.5"><CountCell value={uniqueControls} /></td>
+                  <td className="px-3 py-3.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">{reg.workflow.currentStage}</span>
+                  </td>
+                  <td className="px-3 py-3.5 text-xs text-gray-600 whitespace-nowrap">{reg.workflow.currentAssignee}</td>
+                  <td className="px-3 py-3.5">
+                    <Badge className={reg.decisionState === "Approved" ? "bg-green-100 text-green-700 border border-green-300" : reg.decisionState === "Reviewed" ? "bg-blue-50 text-blue-600 border border-blue-200" : "bg-gray-100 text-gray-500 border border-gray-200"}>
+                      {reg.decisionState}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3.5" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => onOpenRecord(reg.id)} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap">Open <ChevronRight className="w-3 h-3" /></button>
+                  </td>
                 </tr>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-gray-400">No regulations match the current filter.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={13} className="px-4 py-12 text-center text-sm text-gray-400">No regulations match the current filter.</td></tr>}
           </tbody>
         </table>
         <div className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-400 flex justify-between">
@@ -675,29 +741,10 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
 
         {/* RIGHT panel */}
         <div className="w-64 flex-shrink-0 border-l border-gray-200 overflow-y-auto p-4 space-y-4 bg-white">
-          {/* Applicability */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Applicability</h3>
-            <div>
-              <p className="text-[10px] text-gray-400 mb-1">AI suggested</p>
-              <Badge className={applicabilityBadge(reg.aiApplicability)}>{reg.aiApplicability}</Badge>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-400 mb-1.5">Current decision</p>
-              <div className="flex flex-wrap gap-1">
-                {(["Applicable", "Partially applicable", "Not applicable"] as Applicability[]).map((opt) => (
-                  <button key={opt} onClick={() => { setApplicabilityDraft(opt); if (opt !== reg.applicability) setShowRationale(true); }} className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${applicabilityDraft === opt ? "bg-indigo-600 text-white border-indigo-600" : "border-gray-200 text-gray-600 hover:border-indigo-300"}`}>{opt === "Partially applicable" ? "Partial" : opt}</button>
-                ))}
-              </div>
-            </div>
-            {showRationale && (
-              <div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2">
-                <p className="text-[10px] font-medium text-amber-800">Rationale required</p>
-                <textarea placeholder="Why are you changing applicability?" value={rationale} onChange={(e) => setRationale(e.target.value)} rows={2} className="w-full px-2 py-1.5 text-[10px] border border-amber-200 rounded focus:outline-none resize-none" />
-                <button onClick={handleSaveApplicability} disabled={!rationale.trim()} className="px-3 py-1 text-[10px] bg-amber-600 text-white rounded disabled:opacity-50">Save</button>
-              </div>
-            )}
-            {reg.humanRationale && <div><p className="text-[10px] text-gray-400 mb-1">Human rationale</p><p className="text-[10px] text-gray-600 leading-relaxed">{reg.humanRationale}</p></div>}
+          {/* Summary */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Summary</h3>
+            <p className="text-[10px] text-gray-600 leading-relaxed">{reg.humanSummary || reg.aiSummary}</p>
           </div>
 
           {/* Governance checklist */}
