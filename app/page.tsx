@@ -304,8 +304,6 @@ function MappingTable({ regulations, onOpenRecord, activeFilter, setActiveFilter
               <th className="w-8 px-4 py-3"><input type="checkbox" className="rounded border-gray-300" /></th>
               {[
                 { label: "Regulation", sort: false },
-                { label: "Risk", sort: true },
-                { label: "Type", sort: true },
                 { label: "Requirements", sort: false },
                 { label: "Assessed", sort: true },
                 { label: "Covered", sort: true },
@@ -343,8 +341,6 @@ function MappingTable({ regulations, onOpenRecord, activeFilter, setActiveFilter
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3.5"><Badge className={riskBadge(reg.risk)}>{reg.risk}</Badge></td>
-                  <td className="px-3 py-3.5"><Badge className="bg-purple-100 text-purple-700 border border-purple-300">{reg.type}</Badge></td>
                   <td className="px-3 py-3.5 text-center">
                     <span className="text-sm font-semibold text-gray-700">{total}</span>
                   </td>
@@ -367,7 +363,7 @@ function MappingTable({ regulations, onOpenRecord, activeFilter, setActiveFilter
                 </tr>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={13} className="px-4 py-12 text-center text-sm text-gray-400">No regulations match the current filter.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-gray-400">No regulations match the current filter.</td></tr>}
           </tbody>
         </table>
         <div className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-400 flex justify-between">
@@ -444,6 +440,9 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
 
   // Comments
   const [commentDraft, setCommentDraft] = useState("");
+
+  // Audit history
+  const [auditExpanded, setAuditExpanded] = useState(false);
 
   // Applicability (right panel)
   const [applicabilityDraft, setApplicabilityDraft] = useState<Applicability>(reg.applicability);
@@ -528,8 +527,6 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
         <span className="text-gray-200">|</span>
         <div className="flex-1 flex items-center gap-2 flex-wrap min-w-0">
           <span className="text-sm font-semibold text-gray-900 truncate">{reg.title}</span>
-          <Badge className={applicabilityBadge(reg.applicability)}>{reg.applicability}</Badge>
-          <Badge className={riskBadge(reg.risk)}>{reg.risk} risk</Badge>
           <Badge className={decisionBadge(reg.decisionState)}>{reg.decisionState}</Badge>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -622,6 +619,10 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
                       >
                         <td className="px-4 py-3 max-w-xs">
                           <p className="text-xs text-gray-900 leading-relaxed">{obl.text}</p>
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <Badge className={riskBadge(reg.risk)}>{reg.risk}</Badge>
+                            <Badge className="bg-purple-100 text-purple-700 border border-purple-300">{reg.type}</Badge>
+                          </div>
                           {obl.reasonCode && <p className="text-[10px] text-gray-400 italic mt-0.5">{obl.reasonCode}</p>}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap"><Badge className={coverageBadge(obl.coverageStatus)}>{obl.coverageStatus}</Badge></td>
@@ -715,37 +716,43 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
           </div>
 
           {/* Audit history */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-900">Audit history</h3>
-            <div className="relative pl-5">
-              <div className="absolute left-2 top-0 bottom-0 w-px bg-gray-200" />
-              <div className="space-y-4">
-                {[...reg.auditHistory].reverse().map((evt) => (
-                  <div key={evt.id} className="relative">
-                    <div className="absolute -left-4 top-1 w-2.5 h-2.5 rounded-full bg-indigo-200 border-2 border-white" />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-gray-900">{evt.action}</span>
-                        {evt.actor === "Cardamon AI" && <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded border border-indigo-100">AI-generated</span>}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setAuditExpanded((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+            >
+              <h3 className="text-sm font-semibold text-gray-900">Audit history</h3>
+              {auditExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+            </button>
+            {auditExpanded && (
+              <div className="px-4 pb-4">
+                <div className="relative pl-5">
+                  <div className="absolute left-2 top-0 bottom-0 w-px bg-gray-200" />
+                  <div className="space-y-4">
+                    {[...reg.auditHistory].reverse().map((evt) => (
+                      <div key={evt.id} className="relative">
+                        <div className="absolute -left-4 top-1 w-2.5 h-2.5 rounded-full bg-indigo-200 border-2 border-white" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-gray-900">{evt.action}</span>
+                            {evt.actor === "Cardamon AI" && <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded border border-indigo-100">AI-generated</span>}
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{evt.actor} · {new Date(evt.timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                          {(evt.before || evt.after) && <p className="text-[10px] text-gray-500 mt-0.5">{evt.before} → {evt.after}</p>}
+                          {evt.rationale && <p className="text-[10px] text-gray-500 italic mt-0.5">"{evt.rationale}"</p>}
+                        </div>
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-0.5">{evt.actor} · {new Date(evt.timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
-                      {(evt.before || evt.after) && <p className="text-[10px] text-gray-500 mt-0.5">{evt.before} → {evt.after}</p>}
-                      {evt.rationale && <p className="text-[10px] text-gray-500 italic mt-0.5">"{evt.rationale}"</p>}
-                    </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
         {/* RIGHT panel */}
         <div className="w-64 flex-shrink-0 border-l border-gray-200 overflow-y-auto p-4 space-y-4 bg-white">
-          {/* Summary */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Summary</h3>
-            <p className="text-[10px] text-gray-600 leading-relaxed">{reg.humanSummary || reg.aiSummary}</p>
-          </div>
+
 
           {/* Governance checklist */}
           <div className="border-t border-gray-100 pt-4 space-y-2.5">
