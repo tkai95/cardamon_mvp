@@ -534,16 +534,6 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
 
   const isApproved = reg.decisionState === "Approved";
 
-  const checklistItems = [
-    { label: "AI output preserved", done: true },
-    { label: "Human rationale captured", done: !!reg.humanRationale },
-    { label: "Obligations mapped", done: total > 0 },
-    { label: "Coverage assessed", done: assessed === total && total > 0 },
-    { label: "Evidence linked", done: reg.obligations.some((o) => o.evidence.length > 0) },
-    { label: "Audit history complete", done: reg.auditHistory.length > 2 },
-    { label: "Approved decision", done: isApproved },
-  ];
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header row 1 */}
@@ -863,28 +853,6 @@ function RegulationOverview({ regulation: initialReg, regulations, setRegulation
         {/* RIGHT panel */}
         <div className="w-64 flex-shrink-0 border-l border-gray-200 overflow-y-auto p-4 space-y-4 bg-white">
 
-
-          {/* Governance checklist */}
-          <div className="border-t border-gray-100 pt-4 space-y-2.5">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Governance checklist</h3>
-            {checklistItems.map(({ label, done }) => (
-              <div key={label} className="flex items-center gap-2">
-                {done ? <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" /> : <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />}
-                <span className={`text-xs ${done ? "text-gray-700" : "text-gray-400"}`}>{label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Record details */}
-          <div className="border-t border-gray-100 pt-4 space-y-2">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Record details</h3>
-            {[{ label: "Regulator", value: reg.regulator }, { label: "Jurisdiction", value: reg.jurisdiction }, { label: "Type", value: reg.type }, { label: "Stage", value: reg.workflow.currentStage }, { label: "With", value: reg.workflow.currentAssignee }].map(({ label, value }) => (
-              <div key={label} className="flex justify-between items-start gap-2">
-                <span className="text-[10px] text-gray-400 uppercase tracking-wide flex-shrink-0">{label}</span>
-                <span className="text-xs text-gray-700 text-right">{value}</span>
-              </div>
-            ))}
-          </div>
 
           {/* Stage history */}
           {reg.workflow.history.length > 0 && (
