@@ -25,8 +25,6 @@ import {
   CheckCircle2,
   Circle,
   TrendingUp,
-  RefreshCw,
-  Columns3,
   Zap,
 } from "lucide-react";
 
@@ -174,11 +172,9 @@ function Sidebar({ active, setActive }: { active: View; setActive: (v: View) => 
 type ViewScope = "my" | "team" | "all";
 
 function TopBar({
-  onExportAudit,
   viewScope,
   setViewScope,
 }: {
-  onExportAudit: () => void;
   viewScope: ViewScope;
   setViewScope: (s: ViewScope) => void;
 }) {
@@ -191,27 +187,8 @@ function TopBar({
         <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
       </div>
       <div className="flex-1" />
-      <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
-        <RefreshCw className="w-3 h-3" /> Clear
-      </button>
-      <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
-        <Columns3 className="w-3 h-3" /> Columns
-      </button>
-      <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
-        <UserPlus className="w-3 h-3" /> Assign Officer
-      </button>
-      <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
-        <Download className="w-3 h-3" /> Download CSV
-      </button>
-      <button
-        onClick={onExportAudit}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors font-medium"
-      >
-        <FileCheck className="w-3 h-3" /> Export Audit Pack
-      </button>
-
       {/* View scope toggle */}
-      <div className="flex items-center bg-gray-100 rounded-md p-0.5 ml-2">
+      <div className="flex items-center bg-gray-100 rounded-md p-0.5">
         {(["my", "team", "all"] as ViewScope[]).map((s) => {
           const label = s === "my" ? "My View" : s === "team" ? "Team View" : "All";
           return (
@@ -1516,11 +1493,7 @@ export default function App() {
       />
 
       <div className="flex flex-col flex-1 overflow-hidden bg-white">
-        <TopBar
-          onExportAudit={() => showToast("Audit pack export initiated. Download will begin shortly.")}
-          viewScope={viewScope}
-          setViewScope={setViewScope}
-        />
+        <TopBar viewScope={viewScope} setViewScope={setViewScope} />
 
         <main className="flex-1 overflow-hidden bg-gray-50">
           {activeView === "dashboard" && (
